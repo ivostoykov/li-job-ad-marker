@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.30] - 2026-03-27
+
+### Fixed
+- LinkedIn’s native `Applied` badge is now detected and promoted into the extension state, so applied cards are marked without needing the context menu first
+- Applied cards now colour both LinkedIn’s own `.job-card-container__footer-job-state` text and the `.job-card-container__link` title using the configured applied colour
+- The marker toggle now removes all extension-applied classes when switched off and re-scans the page to reapply marks when switched on again
+
 ## [1.1.25] - 2026-03-27
 
 ### Fixed

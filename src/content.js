@@ -12,11 +12,19 @@ function getCardCompanyName(card) {
   return el ? el.textContent.trim() : null;
 }
 
-function applyMark(card, jobState, isBlacklisted) {
+function clearCardMarks(card) {
   card.classList.remove('ljm-viewed', 'ljm-applied', 'ljm-blacklisted');
+}
+
+function applyMark(card, jobState, isBlacklisted) {
+  clearCardMarks(card);
   if (isBlacklisted) card.classList.add('ljm-blacklisted');
   if (jobState === 'applied') card.classList.add('ljm-applied');
   else if (jobState === 'viewed') card.classList.add('ljm-viewed');
+}
+
+function clearAllCardMarks() {
+  getJobCards().forEach((card) => clearCardMarks(card));
 }
 
 function getJobCards() {
@@ -28,9 +36,16 @@ function getCurrentJobId() {
   return params.get('currentJobId') || null;
 }
 
-function isLinkedInViewed(card) {
+function getLinkedInJobState(card) {
   const el = card.querySelector('.job-card-container__footer-job-state');
-  return el?.textContent?.trim() === 'Viewed';
+  const text = el?.textContent?.trim();
+  if (text === 'Applied') return 'applied';
+  if (text === 'Viewed') return 'viewed';
+  return null;
+}
+
+function shouldPromoteState(currentState, nextState) {
+  return (TYPE_RANK[nextState] ?? 0) > (TYPE_RANK[currentState] ?? 0);
 }
 
 function applyColourSettings(colours) {
@@ -72,13 +87,16 @@ async function markCards() {
     const jobId = extractJobId(anchor);
     const company = getCardCompanyName(card);
     const existing = jobMap[jobId];
+    const linkedInState = getLinkedInJobState(card);
 
-    if (!existing && isLinkedInViewed(card)) {
-      saves.push(dbSaveJob(jobId, 'viewed').then(() => { jobMap[jobId] = { id: jobId, type: 'viewed' }; }));
+    if (linkedInState && shouldPromoteState(existing?.type, linkedInState)) {
+      saves.push(dbSaveJob(jobId, linkedInState).then(() => { jobMap[jobId] = { id: jobId, type: linkedInState }; }));
     }
 
     const isBlacklisted = !!(company && blacklist.includes(company));
-    const jobState = existing ? existing.type : (isLinkedInViewed(card) ? 'viewed' : null);
+    const jobState = shouldPromoteState(existing?.type, linkedInState)
+      ? linkedInState
+      : (existing?.type ?? linkedInState);
     applyMark(card, jobState, isBlacklisted);
   });
 
@@ -138,9 +156,7 @@ chrome.runtime.onMessage.addListener((message) => {
   enabled = !enabled;
 
   if (!enabled) {
-    getJobCards().forEach((card) => {
-      card.classList.remove('ljm-viewed', 'ljm-applied', 'ljm-blacklisted');
-    });
+    clearAllCardMarks();
   } else {
     markCards();
   }

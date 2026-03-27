@@ -6,6 +6,14 @@
   outline: 1px solid var(--ljm-applied-colour, limegreen);
 }
 
+.job-card-container.ljm-applied .job-card-container__footer-job-state {
+  color: var(--ljm-applied-colour, limegreen) !important;
+}
+
+.job-card-container.ljm-applied .job-card-container__link {
+  color: var(--ljm-applied-colour, limegreen) !important;
+}
+
 .job-card-container.ljm-blacklisted .artdeco-entity-lockup__subtitle {
   background-color: var(--ljm-blacklisted-bg, rgba(180, 30, 30, 0.15));
   color: var(--ljm-blacklisted-colour, #b41e1e);
