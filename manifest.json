@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Job Ad Marker",
-  "version": "0.0.3",
+  "version": "1.1.17",
   "description": "Marks viewed, applied, and blacklisted company job ads on LinkedIn.",
   "permissions": [
     "storage",
-    "contextMenus"
+    "contextMenus",
+    "tabs"
   ],
+  "options_page": "src/options.html",
   "background": {
     "service_worker": "src/background.js"
   },
@@ -14,8 +16,11 @@
     {
       "matches": ["https://www.linkedin.com/*"],
       "js": [
+        "src/js/utils.js",
+        "src/js/settings.js",
         "src/js/db.js",
         "src/js/blacklist.js",
+        "src/js/log.js",
         "src/content.js"
       ],
       "css": ["src/css/marker.css"],
