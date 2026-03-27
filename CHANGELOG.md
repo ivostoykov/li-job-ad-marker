@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.18] - 2026-03-27
+
+### Fixed
+- DB Restore now applies the same rank check — importing an older backup can no longer downgrade `applied` to `viewed`
+- Context menu separator scoped will no longer leaks onto unrelated pages
+- Options page browser tab title now includes the version number
+
 ## [1.1.17] - 2026-03-27
 
 ### Added

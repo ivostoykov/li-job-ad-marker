@@ -27,9 +27,10 @@ chrome.runtime.onInstalled.addListener(() => {
     });
 
     chrome.contextMenus.create({
-        id: "separatorBeforeOptions",
-        type: "separator",
-        contexts: ['page', 'link']
+      id: 'separatorBeforeOptions',
+      type: 'separator',
+      contexts: ['page', 'link'],
+      documentUrlPatterns: ['https://www.linkedin.com/*'],
     });
 
     chrome.contextMenus.create({

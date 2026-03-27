@@ -54,7 +54,7 @@ async function importJobsToLinkedIn(jobs) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   const mf = chrome.runtime.getManifest();
-  document.title = `${mf.name} — Options`;
+  document.title = `${mf.name} v${mf.version} — Options`;
   document.getElementById('ext-title').textContent = `${mf.name} v${mf.version}`;
 
   savedOptions = await getOptions();
