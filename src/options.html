@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Options</title>
+  <link rel="stylesheet" href="css/options.css">
+</head>
+<body>
+  <h1 id="ext-title">Options</h1>
+
+  <section>
+    <h2>General</h2>
+    <label>
+      <input type="checkbox" id="debug">
+      Enable debug logging
+    </label>
+  </section>
+
+  <section>
+    <h2>Colours</h2>
+    <div class="colour-row">
+      <span>Viewed opacity</span>
+      <input type="range" id="colour-viewed" min="0" max="1" step="0.05">
+      <output id="colour-viewed-val">0.45</output>
+    </div>
+    <div class="colour-row">
+      <span>Applied</span>
+      <input type="color" id="colour-applied">
+    </div>
+    <div class="colour-row">
+      <span>Blacklisted</span>
+      <input type="color" id="colour-blacklisted">
+    </div>
+  </section>
+
+  <div class="buttons">
+    <button id="btn-save">Save</button>
+    <button id="btn-cancel">Cancel</button>
+    <button id="btn-export">Export</button>
+    <button id="btn-import">Import</button>
+    <button id="btn-close">Close</button>
+  </div>
+
+  <p id="message"></p>
+
+  <script src="js/utils.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/blacklist.js"></script>
+  <script src="js/options.js"></script>
+</body>
+</html>

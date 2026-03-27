@@ -1,13 +1,13 @@
 .job-card-container.ljm-viewed {
-  opacity: 0.45;
+  opacity: var(--ljm-viewed-opacity, 0.45);
 }
 
 .job-card-container.ljm-applied {
-  outline: 1px solid limegreen;
+  outline: 1px solid var(--ljm-applied-colour, limegreen);
 }
 
 .job-card-container.ljm-blacklisted .artdeco-entity-lockup__subtitle {
-  background-color: rgba(180, 30, 30, 0.15);
-  color: #b41e1e;
+  background-color: var(--ljm-blacklisted-bg, rgba(180, 30, 30, 0.15));
+  color: var(--ljm-blacklisted-colour, #b41e1e);
   text-decoration: line-through;
 }

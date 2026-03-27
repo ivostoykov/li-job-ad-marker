@@ -26,11 +26,41 @@ function dbGetJob(id) {
   }));
 }
 
+const TYPE_RANK = { viewed: 1, applied: 2 };
+
 function dbSaveJob(id, type) {
   return dbOpen().then((db) => new Promise((resolve, reject) => {
-    const req = db.transaction(STORE_JOBS, 'readwrite').objectStore(STORE_JOBS).put({ id, type, timestamp: Date.now() });
-    req.onsuccess = () => resolve();
-    req.onerror = (e) => reject(e.target.error);
+    const store = db.transaction(STORE_JOBS, 'readwrite').objectStore(STORE_JOBS);
+    const getReq = store.get(id);
+    getReq.onsuccess = (e) => {
+      const existing = e.target.result;
+      if (existing && (TYPE_RANK[existing.type] ?? 0) >= (TYPE_RANK[type] ?? 0)) {
+        resolve();
+        return;
+      }
+      const putReq = store.put({ id, type, timestamp: Date.now() });
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = (ev) => reject(ev.target.error);
+    };
+    getReq.onerror = (e) => reject(e.target.error);
+  }));
+}
+
+function dbRestoreJob(id, type, timestamp) {
+  return dbOpen().then((db) => new Promise((resolve, reject) => {
+    const store = db.transaction(STORE_JOBS, 'readwrite').objectStore(STORE_JOBS);
+    const getReq = store.get(id);
+    getReq.onsuccess = (e) => {
+      const existing = e.target.result;
+      if (existing && (TYPE_RANK[existing.type] ?? 0) >= (TYPE_RANK[type] ?? 0)) {
+        resolve();
+        return;
+      }
+      const putReq = store.put({ id, type, timestamp });
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = (ev) => reject(ev.target.error);
+    };
+    getReq.onerror = (e) => reject(e.target.error);
   }));
 }
 

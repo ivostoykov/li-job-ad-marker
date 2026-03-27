@@ -33,8 +33,32 @@ function isLinkedInViewed(card) {
   return el?.textContent?.trim() === 'Viewed';
 }
 
+function applyColourSettings(colours) {
+  let el = document.getElementById('ljm-colours');
+  if (!el) {
+    el = document.createElement('style');
+    el.id = 'ljm-colours';
+    document.head.appendChild(el);
+  }
+  el.textContent = `:root {
+    --ljm-viewed-opacity: ${colours.viewed};
+    --ljm-applied-colour: ${colours.applied};
+    --ljm-blacklisted-colour: ${colours.blacklisted};
+    --ljm-blacklisted-bg: ${hexToRgba(colours.blacklisted, 0.15)};
+  }`;
+  console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - colours applied`, colours);
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'sync' && changes[SETTINGS_KEY]) {
+    const newOptions = changes[SETTINGS_KEY].newValue;
+    if (newOptions?.colours) applyColourSettings(newOptions.colours);
+  }
+});
+
 async function markCards() {
   if (!enabled) return;
+  console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - markCards()`);
   const [allJobs, blacklist] = await Promise.all([dbGetAllJobs(), blGetList()]);
   const jobMap = {};
   allJobs.forEach((j) => { jobMap[j.id] = j; });
@@ -67,28 +91,9 @@ async function recordCurrentJob() {
 
   const existing = await dbGetJob(jobId);
   if (!existing) {
+    console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - recording viewed: ${jobId}`);
     await dbSaveJob(jobId, 'viewed');
     await markCards();
-  }
-}
-
-function watchUrlChanges() {
-  let lastJobId = getCurrentJobId();
-
-  const original = history.pushState.bind(history);
-  history.pushState = function (...args) {
-    original(...args);
-    onUrlChange();
-  };
-
-  window.addEventListener('popstate', onUrlChange);
-
-  function onUrlChange() {
-    const jobId = getCurrentJobId();
-    if (jobId && jobId !== lastJobId) {
-      lastJobId = jobId;
-      recordCurrentJob();
-    }
   }
 }
 
@@ -113,6 +118,21 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 chrome.runtime.onMessage.addListener((message) => {
+  if (message.action !== 'applied-mark') return;
+
+  const card = lastRightClickedCard;
+  if (!card) return;
+
+  const anchor = card.querySelector('a[href*="/jobs/view/"]');
+  if (!anchor) return;
+  const jobId = extractJobId(anchor);
+  if (!jobId) return;
+
+  console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - marking applied: ${jobId}`);
+  dbSaveJob(jobId, 'applied').then(() => markCards());
+});
+
+chrome.runtime.onMessage.addListener((message) => {
   if (message.action !== 'marker-toggle') return;
 
   enabled = !enabled;
@@ -126,28 +146,44 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.action !== 'get-all-jobs') return;
+  dbGetAllJobs().then((jobs) => sendResponse({ jobs }));
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.action !== 'import-jobs') return;
+  const jobs = message.jobs ?? [];
+  Promise.all(jobs.map((j) => dbRestoreJob(j.id, j.type, j.timestamp)))
+    .then(() => sendResponse({ ok: true }))
+    .catch((e) => sendResponse({ ok: false, error: e.message }));
+  return true;
+});
+
 let cardObserver = null;
 
 function observeCards(onReady) {
   if (cardObserver) cardObserver.disconnect();
 
-  let knownCount = getJobCards().length;
+  let knownCards = new Set(getJobCards());
   let debounceTimer = null;
-  let ready = knownCount > 0;
+  let ready = knownCards.size > 0;
 
   if (ready) onReady();
 
   cardObserver = new MutationObserver(() => {
-    const current = getJobCards().length;
-    if (current < knownCount) { knownCount = current; return; }
-    if (current === knownCount) return;
-    knownCount = current;
+    const current = getJobCards();
+    const hasNew = current.length > 0 && [...current].some((c) => !knownCards.has(c));
+    if (!hasNew) return;
+    knownCards = new Set(current);
 
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => markCards(), 300);
 
     if (!ready) {
       ready = true;
+      console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - cards ready`);
       onReady();
     }
   });
@@ -189,6 +225,8 @@ function watchUrlChanges() {
     }
   }
 }
+
+getOptions().then((opts) => applyColourSettings(opts.colours));
 
 watchUrlChanges();
 if (location.pathname.startsWith('/jobs/')) startOnJobsPage();
