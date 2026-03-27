@@ -2,6 +2,7 @@
 .aimem/
 .issues/
 .claude/
+FF/
 
 # Files
 AGENTS.md

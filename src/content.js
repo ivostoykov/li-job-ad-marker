@@ -163,32 +163,59 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 let cardObserver = null;
 
+function hasReadyJobCards() {
+  return !!document.querySelector('.job-card-container a[href*="/jobs/view/"]');
+}
+
+function nodeIsRelevant(node) {
+  const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  if (!el) return false;
+
+  if (el.closest('.job-card-container')) return true;
+
+  return (
+    el.matches('.job-card-container, a[href*="/jobs/view/"]') ||
+    !!el.querySelector('.job-card-container, a[href*="/jobs/view/"]')
+  );
+}
+
+function isMutationRelevant(mutationList) {
+  return mutationList.some((mutation) => {
+    if (nodeIsRelevant(mutation.target)) return true;
+    return [...mutation.addedNodes].some(nodeIsRelevant);
+  });
+}
+
 function observeCards(onReady) {
   if (cardObserver) cardObserver.disconnect();
 
-  let knownCards = new Set(getJobCards());
   let debounceTimer = null;
-  let ready = knownCards.size > 0;
+  let ready = hasReadyJobCards();
 
   if (ready) onReady();
 
-  cardObserver = new MutationObserver(() => {
-    const current = getJobCards();
-    const hasNew = current.length > 0 && [...current].some((c) => !knownCards.has(c));
-    if (!hasNew) return;
-    knownCards = new Set(current);
+  cardObserver = new MutationObserver((mutationList) => {
+    if (!isMutationRelevant(mutationList)) return;
 
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => markCards(), 300);
+    debounceTimer = setTimeout(() => {
+      markCards();
 
-    if (!ready) {
-      ready = true;
-      console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - cards ready`);
-      onReady();
-    }
+      if (!ready && hasReadyJobCards()) {
+        ready = true;
+        console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - cards ready`);
+        onReady();
+      }
+    }, 300);
   });
 
-  cardObserver.observe(document.body, { childList: true, subtree: true });
+  cardObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['href']
+  });
 }
 
 function startOnJobsPage() {
