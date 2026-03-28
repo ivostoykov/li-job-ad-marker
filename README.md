@@ -1,5 +1,9 @@
 # LinkedIn Job Ad Marker
 
+<img src="icons/Screenshot.png">
+
+---
+
 LinkedIn Job Ad Marker is a Chrome extension for LinkedIn job search pages. It helps you work through large job lists faster by marking adverts you have already seen, jobs you have applied for, and companies you do not want to deal with.
 
 The aim is simple: reduce repeat scanning. Instead of re-reading the same cards every time LinkedIn reshuffles, reloads, or promotes old listings again, the extension adds lightweight visual cues directly to the job list.
