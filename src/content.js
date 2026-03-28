@@ -4,6 +4,8 @@ const JOB_LINK_RE = /\/jobs\/view\/(\d+)/;
 const JOB_CARD_SELECTOR = '.job-card-container';
 const JOB_LINK_SELECTOR = 'a[href*="/jobs/view/"]';
 const JOB_CARD_WRAPPER_SELECTOR = 'li[data-occludable-job-id]';
+const AI_SEARCH_ROOT_SELECTOR = 'main div[componentkey="SearchResultsMainContent"]';
+const AI_SEARCH_CARD_SELECTOR = 'div[role="button"][componentkey], a[componentkey][href*="currentJobId="]';
 
 function getSearchParam(key) {
   const params = new URLSearchParams(location.search);
@@ -16,6 +18,12 @@ function isElement(node) {
 
 function getTextContent(el) {
   return el?.textContent?.trim() || null;
+}
+
+function getMeaningfulTextEntries(card, selector = 'p') {
+  return [...card.querySelectorAll(selector)]
+    .map((el) => ({ el, text: getTextContent(el) }))
+    .filter(({ text }) => text && text !== '·');
 }
 
 function extractJobId(anchor) {
@@ -44,6 +52,15 @@ const defaultJobsAdapter = {
   getCompanyName(card) {
     return getTextContent(card?.querySelector('.artdeco-entity-lockup__subtitle'));
   },
+  getCompanyElement(card) {
+    return card?.querySelector('.artdeco-entity-lockup__subtitle') || null;
+  },
+  getTitleElement(card) {
+    return card?.querySelector('.job-card-container__link') || null;
+  },
+  getStateElement(card) {
+    return card?.querySelector('.job-card-container__footer-job-state') || null;
+  },
   getLinkedInJobState(card) {
     const text = getTextContent(card?.querySelector('.job-card-container__footer-job-state'));
     if (text === 'Applied') return 'applied';
@@ -64,6 +81,83 @@ const defaultJobsAdapter = {
       el.matches(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}`) ||
       !!el.querySelector(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}`)
     );
+  }
+};
+
+const aiSearchAdapter = {
+  ...defaultJobsAdapter,
+  name: 'ai-search-results',
+  matches() {
+    return (
+      location.pathname === '/jobs/search-results/' &&
+      !!this.getListRoot()
+    );
+  },
+  getListRoot() {
+    return document.querySelector(AI_SEARCH_ROOT_SELECTOR);
+  },
+  getJobCards() {
+    const root = this.getListRoot();
+    return root ? root.querySelectorAll(AI_SEARCH_CARD_SELECTOR) : [];
+  },
+  getCardFromElement(el) {
+    if (!isElement(el)) return null;
+
+    const root = this.getListRoot();
+    if (!root || !root.contains(el)) return null;
+
+    const directCard = el.closest(AI_SEARCH_CARD_SELECTOR);
+    if (directCard && root.contains(directCard)) return directCard;
+
+    let current = el;
+    while (current && current !== root) {
+      if (current.parentElement === root && current.matches('div, a')) {
+        return current.matches(AI_SEARCH_CARD_SELECTOR)
+          ? current
+          : (current.querySelector(AI_SEARCH_CARD_SELECTOR) || null);
+      }
+      current = current.parentElement;
+    }
+
+    return null;
+  },
+  getJobId(card) {
+    if (card?.matches('a[href*="currentJobId="]')) {
+      return extractCurrentJobIdFromHref(card.getAttribute('href'));
+    }
+
+    const cardLink = card?.querySelector('a[href*="currentJobId="]');
+    if (cardLink) {
+      return extractCurrentJobIdFromHref(cardLink.getAttribute('href'));
+    }
+
+    return null;
+  },
+  getCompanyElement(card) {
+    return getMeaningfulTextEntries(card)[1]?.el || null;
+  },
+  getTitleElement(card) {
+    return getMeaningfulTextEntries(card)[0]?.el || null;
+  },
+  getStateElement(card) {
+    return getMeaningfulTextEntries(card).find(({ text }) => text === 'Applied' || text === 'Viewed')?.el || null;
+  },
+  getCompanyName(card) {
+    return getTextContent(this.getCompanyElement(card));
+  },
+  getLinkedInJobState(card) {
+    const texts = getMeaningfulTextEntries(card).map(({ text }) => text);
+    if (texts.includes('Applied')) return 'applied';
+    if (texts.includes('Viewed')) return 'viewed';
+    return null;
+  },
+  hasReadyJobCards() {
+    return this.getJobCards().length > 0;
+  },
+  isRelevantElement(el) {
+    if (!isElement(el)) return false;
+    const root = this.getListRoot();
+    return !!(root && root.contains(el));
   }
 };
 
@@ -103,7 +197,17 @@ const companySearchAdapter = {
   }
 };
 
-const PAGE_ADAPTERS = [companySearchAdapter, defaultJobsAdapter];
+const PAGE_ADAPTERS = [aiSearchAdapter, companySearchAdapter, defaultJobsAdapter];
+
+function extractCurrentJobIdFromHref(href) {
+  if (!href) return null;
+
+  try {
+    return new URL(href, location.origin).searchParams.get('currentJobId');
+  } catch (_e) {
+    return null;
+  }
+}
 
 let currentPageAdapter = defaultJobsAdapter;
 
@@ -164,19 +268,35 @@ function addMessageRequest(action, handler) {
   });
 }
 
-function clearCardMarks(card) {
+function clearCardMarks(card, adapter = refreshPageAdapter()) {
   card.classList.remove('ljm-viewed', 'ljm-applied', 'ljm-blacklisted');
+  const companyElement = adapter.getCompanyElement?.(card);
+  const titleElement = adapter.getTitleElement?.(card);
+  const stateElement = adapter.getStateElement?.(card);
+  companyElement?.classList.remove('ljm-blacklisted-company');
+  titleElement?.classList.remove('ljm-applied-title');
+  stateElement?.classList.remove('ljm-applied-state');
 }
 
-function applyMark(card, jobState, isBlacklisted) {
-  clearCardMarks(card);
+function applyMark(card, jobState, isBlacklisted, adapter = refreshPageAdapter()) {
+  clearCardMarks(card, adapter);
+  const companyElement = adapter.getCompanyElement?.(card);
+  const titleElement = adapter.getTitleElement?.(card);
+  const stateElement = adapter.getStateElement?.(card);
+
   if (isBlacklisted) card.classList.add('ljm-blacklisted');
-  if (jobState === 'applied') card.classList.add('ljm-applied');
+  if (isBlacklisted && companyElement) companyElement.classList.add('ljm-blacklisted-company');
+  if (jobState === 'applied') {
+    card.classList.add('ljm-applied');
+    titleElement?.classList.add('ljm-applied-title');
+    stateElement?.classList.add('ljm-applied-state');
+  }
   else if (jobState === 'viewed') card.classList.add('ljm-viewed');
 }
 
 function clearAllCardMarks() {
-  refreshPageAdapter().getJobCards().forEach((card) => clearCardMarks(card));
+  const adapter = refreshPageAdapter();
+  adapter.getJobCards().forEach((card) => clearCardMarks(card, adapter));
 }
 
 function shouldPromoteState(currentState, nextState) {
@@ -223,16 +343,11 @@ async function markCards() {
 
   adapter.getJobCards().forEach((card) => {
     const jobId = adapter.getJobId(card);
-    if (!jobId) {
-      logDebug(`Skipping card without job ID for adapter "${adapter.name}"`, card);
-      return;
-    }
-
     const company = adapter.getCompanyName(card);
-    const existing = jobMap[jobId];
+    const existing = jobId ? jobMap[jobId] : null;
     const linkedInState = adapter.getLinkedInJobState(card);
 
-    if (linkedInState && shouldPromoteState(existing?.type, linkedInState)) {
+    if (jobId && linkedInState && shouldPromoteState(existing?.type, linkedInState)) {
       saves.push(dbSaveJob(jobId, linkedInState).then(() => { jobMap[jobId] = { id: jobId, type: linkedInState }; }));
     }
 
@@ -240,7 +355,9 @@ async function markCards() {
     const jobState = shouldPromoteState(existing?.type, linkedInState)
       ? linkedInState
       : (existing?.type ?? linkedInState);
-    applyMark(card, jobState, isBlacklisted);
+
+    if (!jobId && !company && !jobState) return;
+    applyMark(card, jobState, isBlacklisted, adapter);
   });
 
   await Promise.all(saves);

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.35] - 2026-03-28
+
+### Added
+- Dedicated page adapter for LinkedIn’s AI-generated jobs search surface
+
+### Changed
+- Cards without a stable job ID can now still be styled from LinkedIn’s own `Viewed` or `Applied` labels and from the company blacklist; DB writes still require a real job ID
+- Applied styling now colours the title and state text on the AI-generated results surface, matching the classic search list more closely
+
+### Fixed
+- AI-generated search-result cards now resolve through their own card selectors
+- Company extraction for AI-generated cards now enable blacklist styling on that surface
+- The selected AI-result card can now reuse `currentJobId` from its in-list anchor when present
+
 ## [1.1.32] - 2026-03-28
 
 ### Added
@@ -12,14 +26,14 @@
 
 ### Fixed
 - Company-page jobs-cluster search results now resolve right-clicked cards more reliably for context-menu actions
-- Company-search cards can now fall back to `data-job-id` and `data-occludable-job-id` when extracting job IDs
+- Company-search cards can now fall back to job IDs
 - Content-script failures in async handlers, mutation processing, options loading, and URL-change handling now log explicitly instead of failing silently
 
 ## [1.1.30] - 2026-03-27
 
 ### Fixed
 - LinkedIn’s native `Applied` badge is now detected and promoted into the extension state, so applied cards are marked without needing the context menu first
-- Applied cards now colour both LinkedIn’s own `.job-card-container__footer-job-state` text and the `.job-card-container__link` title using the configured applied colour
+- Applied cards now colour LinkedIn’s own title using the configured applied colour
 - The marker toggle now removes all extension-applied classes when switched off and re-scans the page to reapply marks when switched on again
 
 ## [1.1.25] - 2026-03-27
