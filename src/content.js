@@ -1,15 +1,167 @@
 let enabled = true;
 
 const JOB_LINK_RE = /\/jobs\/view\/(\d+)/;
+const JOB_CARD_SELECTOR = '.job-card-container';
+const JOB_LINK_SELECTOR = 'a[href*="/jobs/view/"]';
+const JOB_CARD_WRAPPER_SELECTOR = 'li[data-occludable-job-id]';
+
+function getSearchParam(key) {
+  const params = new URLSearchParams(location.search);
+  return params.get(key) || null;
+}
+
+function isElement(node) {
+  return node instanceof Element;
+}
+
+function getTextContent(el) {
+  return el?.textContent?.trim() || null;
+}
 
 function extractJobId(anchor) {
-  const match = anchor.href.match(JOB_LINK_RE);
+  const match = anchor?.href?.match(JOB_LINK_RE);
   return match ? match[1] : null;
 }
 
-function getCardCompanyName(card) {
-  const el = card.querySelector('.artdeco-entity-lockup__subtitle');
-  return el ? el.textContent.trim() : null;
+const defaultJobsAdapter = {
+  name: 'default-jobs',
+  matches() {
+    return location.pathname.startsWith('/jobs/');
+  },
+  getJobCards() {
+    return document.querySelectorAll(JOB_CARD_SELECTOR);
+  },
+  getCardFromElement(el) {
+    if (!isElement(el)) return null;
+    return el.closest(JOB_CARD_SELECTOR);
+  },
+  getAnchor(card) {
+    return card?.querySelector(JOB_LINK_SELECTOR) || null;
+  },
+  getJobId(card) {
+    return card?.dataset?.jobId || extractJobId(this.getAnchor(card));
+  },
+  getCompanyName(card) {
+    return getTextContent(card?.querySelector('.artdeco-entity-lockup__subtitle'));
+  },
+  getLinkedInJobState(card) {
+    const text = getTextContent(card?.querySelector('.job-card-container__footer-job-state'));
+    if (text === 'Applied') return 'applied';
+    if (text === 'Viewed') return 'viewed';
+    return null;
+  },
+  getCurrentJobId() {
+    return getSearchParam('currentJobId');
+  },
+  hasReadyJobCards() {
+    return [...this.getJobCards()].some((card) => !!this.getJobId(card));
+  },
+  isRelevantElement(el) {
+    if (!isElement(el)) return false;
+    if (this.getCardFromElement(el)) return true;
+
+    return (
+      el.matches(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}`) ||
+      !!el.querySelector(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}`)
+    );
+  }
+};
+
+const companySearchAdapter = {
+  ...defaultJobsAdapter,
+  name: 'company-search',
+  matches() {
+    return (
+      location.pathname === '/jobs/search/' &&
+      getSearchParam('origin') === 'COMPANY_PAGE_JOBS_CLUSTER_EXPANSION'
+    );
+  },
+  getCardFromElement(el) {
+    if (!isElement(el)) return null;
+
+    const directCard = el.closest(JOB_CARD_SELECTOR);
+    if (directCard) return directCard;
+
+    const wrapper = el.closest(JOB_CARD_WRAPPER_SELECTOR);
+    return wrapper?.querySelector(JOB_CARD_SELECTOR) || null;
+  },
+  getJobId(card) {
+    return (
+      card?.dataset?.jobId ||
+      card?.closest(JOB_CARD_WRAPPER_SELECTOR)?.dataset?.occludableJobId ||
+      defaultJobsAdapter.getJobId(card)
+    );
+  },
+  isRelevantElement(el) {
+    if (!isElement(el)) return false;
+    if (this.getCardFromElement(el)) return true;
+
+    return (
+      el.matches(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}, ${JOB_CARD_WRAPPER_SELECTOR}`) ||
+      !!el.querySelector(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}, ${JOB_CARD_WRAPPER_SELECTOR}`)
+    );
+  }
+};
+
+const PAGE_ADAPTERS = [companySearchAdapter, defaultJobsAdapter];
+
+let currentPageAdapter = defaultJobsAdapter;
+
+function selectPageAdapter() {
+  return PAGE_ADAPTERS.find((adapter) => adapter.matches()) || defaultJobsAdapter;
+}
+
+function refreshPageAdapter() {
+  const nextAdapter = selectPageAdapter();
+  if (currentPageAdapter.name !== nextAdapter.name) {
+    logDebug(`Using page adapter "${nextAdapter.name}"`);
+  }
+  currentPageAdapter = nextAdapter;
+  return currentPageAdapter;
+}
+
+function findCardFromNodes(nodes) {
+  const adapter = refreshPageAdapter();
+
+  for (const node of nodes) {
+    if (!isElement(node)) continue;
+    const card = adapter.getCardFromElement(node);
+    if (card) return card;
+  }
+
+  return null;
+}
+
+function getContextCard(action) {
+  if (lastRightClickedCard) return lastRightClickedCard;
+  logWarn(`${action}: no job card captured from context menu`);
+  return null;
+}
+
+function addMessageAction(action, handler) {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action !== action) return;
+
+    Promise.resolve()
+      .then(() => handler(message))
+      .catch((e) => logError(`${action} failed:`, e));
+  });
+}
+
+function addMessageRequest(action, handler) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.action !== action) return;
+
+    Promise.resolve()
+      .then(() => handler(message))
+      .then((response) => sendResponse(response))
+      .catch((e) => {
+        logError(`${action} failed:`, e);
+        sendResponse({ ok: false, error: e?.message || String(e) });
+      });
+
+    return true;
+  });
 }
 
 function clearCardMarks(card) {
@@ -24,24 +176,7 @@ function applyMark(card, jobState, isBlacklisted) {
 }
 
 function clearAllCardMarks() {
-  getJobCards().forEach((card) => clearCardMarks(card));
-}
-
-function getJobCards() {
-  return document.querySelectorAll('.job-card-container');
-}
-
-function getCurrentJobId() {
-  const params = new URLSearchParams(location.search);
-  return params.get('currentJobId') || null;
-}
-
-function getLinkedInJobState(card) {
-  const el = card.querySelector('.job-card-container__footer-job-state');
-  const text = el?.textContent?.trim();
-  if (text === 'Applied') return 'applied';
-  if (text === 'Viewed') return 'viewed';
-  return null;
+  refreshPageAdapter().getJobCards().forEach((card) => clearCardMarks(card));
 }
 
 function shouldPromoteState(currentState, nextState) {
@@ -61,33 +196,41 @@ function applyColourSettings(colours) {
     --ljm-blacklisted-colour: ${colours.blacklisted};
     --ljm-blacklisted-bg: ${hexToRgba(colours.blacklisted, 0.15)};
   }`;
-  console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - colours applied`, colours);
+  logDebug('colours applied', colours);
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'sync' && changes[SETTINGS_KEY]) {
-    const newOptions = changes[SETTINGS_KEY].newValue;
-    if (newOptions?.colours) applyColourSettings(newOptions.colours);
+  try {
+    if (areaName === 'sync' && changes[SETTINGS_KEY]) {
+      const newOptions = changes[SETTINGS_KEY].newValue;
+      if (newOptions?.colours) applyColourSettings(newOptions.colours);
+    }
+  } catch (e) {
+    logError('Failed to apply updated colour settings:', e);
   }
 });
 
 async function markCards() {
   if (!enabled) return;
-  console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - markCards()`);
+  const adapter = refreshPageAdapter();
+  logDebug(`markCards() with adapter "${adapter.name}"`);
+
   const [allJobs, blacklist] = await Promise.all([dbGetAllJobs(), blGetList()]);
   const jobMap = {};
   allJobs.forEach((j) => { jobMap[j.id] = j; });
 
   const saves = [];
 
-  getJobCards().forEach((card) => {
-    const anchor = card.querySelector('a[href*="/jobs/view/"]');
-    if (!anchor) return;
+  adapter.getJobCards().forEach((card) => {
+    const jobId = adapter.getJobId(card);
+    if (!jobId) {
+      logDebug(`Skipping card without job ID for adapter "${adapter.name}"`, card);
+      return;
+    }
 
-    const jobId = extractJobId(anchor);
-    const company = getCardCompanyName(card);
+    const company = adapter.getCompanyName(card);
     const existing = jobMap[jobId];
-    const linkedInState = getLinkedInJobState(card);
+    const linkedInState = adapter.getLinkedInJobState(card);
 
     if (linkedInState && shouldPromoteState(existing?.type, linkedInState)) {
       saves.push(dbSaveJob(jobId, linkedInState).then(() => { jobMap[jobId] = { id: jobId, type: linkedInState }; }));
@@ -104,12 +247,12 @@ async function markCards() {
 }
 
 async function recordCurrentJob() {
-  const jobId = getCurrentJobId();
+  const jobId = refreshPageAdapter().getCurrentJobId();
   if (!jobId) return;
 
   const existing = await dbGetJob(jobId);
   if (!existing) {
-    console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - recording viewed: ${jobId}`);
+    logDebug(`recording viewed: ${jobId}`);
     await dbSaveJob(jobId, 'viewed');
     await markCards();
   }
@@ -118,81 +261,77 @@ async function recordCurrentJob() {
 let lastRightClickedCard = null;
 
 document.addEventListener('contextmenu', (e) => {
-  lastRightClickedCard = e.target.closest('.job-card-container');
+  try {
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+    lastRightClickedCard = findCardFromNodes(path);
+  } catch (err) {
+    lastRightClickedCard = null;
+    logError('Failed to capture context menu target:', err);
+  }
 });
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.action !== 'blacklist-toggle') return;
-
-  const card = lastRightClickedCard;
+addMessageAction('blacklist-toggle', async () => {
+  const adapter = refreshPageAdapter();
+  const card = getContextCard('blacklist-toggle');
   if (!card) return;
 
-  const company = getCardCompanyName(card);
-  if (!company) return;
+  const company = adapter.getCompanyName(card);
+  if (!company) {
+    logWarn('blacklist-toggle: company name not found for selected card');
+    return;
+  }
 
-  blIncludes(company).then((listed) => {
-    return listed ? blRemove(company) : blAdd(company);
-  }).then(() => markCards());
+  const listed = await blIncludes(company);
+  await (listed ? blRemove(company) : blAdd(company));
+  await markCards();
 });
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.action !== 'applied-mark') return;
-
-  const card = lastRightClickedCard;
+addMessageAction('applied-mark', async () => {
+  const card = getContextCard('applied-mark');
   if (!card) return;
 
-  const anchor = card.querySelector('a[href*="/jobs/view/"]');
-  if (!anchor) return;
-  const jobId = extractJobId(anchor);
-  if (!jobId) return;
+  const jobId = refreshPageAdapter().getJobId(card);
+  if (!jobId) {
+    logWarn('applied-mark: job ID not found for selected card');
+    return;
+  }
 
-  console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - marking applied: ${jobId}`);
-  dbSaveJob(jobId, 'applied').then(() => markCards());
+  logDebug(`marking applied: ${jobId}`);
+  await dbSaveJob(jobId, 'applied');
+  await markCards();
 });
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.action !== 'marker-toggle') return;
-
+addMessageAction('marker-toggle', async () => {
   enabled = !enabled;
 
   if (!enabled) {
     clearAllCardMarks();
   } else {
-    markCards();
+    await markCards();
   }
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.action !== 'get-all-jobs') return;
-  dbGetAllJobs().then((jobs) => sendResponse({ jobs }));
-  return true;
+addMessageRequest('get-all-jobs', async () => {
+  const jobs = await dbGetAllJobs();
+  return { jobs };
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.action !== 'import-jobs') return;
+addMessageRequest('import-jobs', async (message) => {
   const jobs = message.jobs ?? [];
-  Promise.all(jobs.map((j) => dbRestoreJob(j.id, j.type, j.timestamp)))
-    .then(() => sendResponse({ ok: true }))
-    .catch((e) => sendResponse({ ok: false, error: e.message }));
-  return true;
+  await Promise.all(jobs.map((j) => dbRestoreJob(j.id, j.type, j.timestamp)));
+  return { ok: true };
 });
 
 let cardObserver = null;
 
 function hasReadyJobCards() {
-  return !!document.querySelector('.job-card-container a[href*="/jobs/view/"]');
+  return refreshPageAdapter().hasReadyJobCards();
 }
 
 function nodeIsRelevant(node) {
   const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   if (!el) return false;
-
-  if (el.closest('.job-card-container')) return true;
-
-  return (
-    el.matches('.job-card-container, a[href*="/jobs/view/"]') ||
-    !!el.querySelector('.job-card-container, a[href*="/jobs/view/"]')
-  );
+  return refreshPageAdapter().isRelevantElement(el);
 }
 
 function isMutationRelevant(mutationList) {
@@ -214,13 +353,17 @@ function observeCards(onReady) {
     if (!isMutationRelevant(mutationList)) return;
 
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      markCards();
+    debounceTimer = setTimeout(async () => {
+      try {
+        await markCards();
 
-      if (!ready && hasReadyJobCards()) {
-        ready = true;
-        console.debug(`>>> ${manifest?.name ?? ''} - [${getLineNumber()}] - cards ready`);
-        onReady();
+        if (!ready && hasReadyJobCards()) {
+          ready = true;
+          logDebug(`cards ready for adapter "${refreshPageAdapter().name}"`);
+          onReady();
+        }
+      } catch (e) {
+        logError('Failed to process card mutations:', e);
       }
     }, 300);
   });
@@ -230,46 +373,65 @@ function observeCards(onReady) {
     subtree: true,
     characterData: true,
     attributes: true,
-    attributeFilter: ['href']
+    attributeFilter: ['href', 'data-job-id', 'data-occludable-job-id']
   });
 }
 
 function startOnJobsPage() {
+  refreshPageAdapter();
   new Promise((resolve) => observeCards(resolve))
     .then(() => markCards())
-    .then(() => recordCurrentJob());
+    .then(() => recordCurrentJob())
+    .catch((e) => logError('Failed to start jobs page handling:', e));
 }
 
 function watchUrlChanges() {
-  let lastJobId = getCurrentJobId();
+  let lastJobId = refreshPageAdapter().getCurrentJobId();
   let lastPath = location.pathname;
+  let lastSearch = location.search;
 
-  const original = history.pushState.bind(history);
-  history.pushState = function (...args) {
-    original(...args);
-    onUrlChange();
-  };
+  wrapHistoryMethod('pushState');
+  wrapHistoryMethod('replaceState');
 
   window.addEventListener('popstate', onUrlChange);
 
+  function wrapHistoryMethod(methodName) {
+    const original = history[methodName].bind(history);
+
+    history[methodName] = function (...args) {
+      const result = original(...args);
+      onUrlChange();
+      return result;
+    };
+  }
+
   function onUrlChange() {
-    const isJobs = location.pathname.startsWith('/jobs/');
-    const pathChanged = location.pathname !== lastPath;
-    lastPath = location.pathname;
+    try {
+      const isJobs = location.pathname.startsWith('/jobs/');
+      const pathChanged = location.pathname !== lastPath;
+      const searchChanged = location.search !== lastSearch;
+      lastPath = location.pathname;
+      lastSearch = location.search;
 
-    if (isJobs && pathChanged) {
-      startOnJobsPage();
-    }
+      if (isJobs && (pathChanged || searchChanged)) {
+        refreshPageAdapter();
+        startOnJobsPage();
+      }
 
-    const jobId = getCurrentJobId();
-    if (isJobs && jobId && jobId !== lastJobId) {
-      lastJobId = jobId;
-      recordCurrentJob();
+      const jobId = refreshPageAdapter().getCurrentJobId();
+      if (isJobs && jobId && jobId !== lastJobId) {
+        lastJobId = jobId;
+        recordCurrentJob().catch((e) => logError('Failed to record current job after URL change:', e));
+      }
+    } catch (e) {
+      logError('Failed to process URL change:', e);
     }
   }
 }
 
-getOptions().then((opts) => applyColourSettings(opts.colours));
+getOptions()
+  .then((opts) => applyColourSettings(opts.colours))
+  .catch((e) => logError('Failed to load initial options:', e));
 
 watchUrlChanges();
 if (location.pathname.startsWith('/jobs/')) startOnJobsPage();

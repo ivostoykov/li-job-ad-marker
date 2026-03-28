@@ -1,10 +1,14 @@
 const manifest = chrome.runtime.getManifest();
 
-function getLineNumber() {
+function getLineNumber(skipNames = []) {
   const e = new Error();
-  const stackLines = e.stack.split('\n').map((line) => line.trim());
-  const index = stackLines.findIndex((line) => line.includes(getLineNumber.name));
-  return stackLines[index + 1]
+  const stackLines = e.stack?.split('\n').map((line) => line.trim()).slice(1) ?? [];
+  const skipSet = new Set([getLineNumber.name, ...skipNames]);
+  const targetLine = stackLines.find((line) => {
+    return ![...skipSet].some((name) => line.includes(name));
+  });
+
+  return targetLine
     ?.replace(/\s{0,}at\s+/, '')
     ?.replace(/^.*?\/([^/]+\/[^/]+:\d+:\d+)$/, '$1')
     ?.split('/')?.pop().replace(/\)$/, '')

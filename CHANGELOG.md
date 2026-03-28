@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.32] - 2026-03-28
+
+### Added
+- Page-adapter routing in the content script, with a dedicated company-search adapter for the `COMPANY_PAGE_JOBS_CLUSTER_EXPANSION` LinkedIn jobs surface
+- Structured log helpers with marker/badge prefixes for `error`, `warn`, `log`, and `debug`
+
+### Changed
+- Card lookup, job ID lookup, company lookup, and readiness checks now flow through the active page adapter instead of one shared DOM assumption
+- Log prefixes now use `✎` plus a coloured badge instead of the old `>>>` prefix
+
+### Fixed
+- Company-page jobs-cluster search results now resolve right-clicked cards more reliably for context-menu actions
+- Company-search cards can now fall back to `data-job-id` and `data-occludable-job-id` when extracting job IDs
+- Content-script failures in async handlers, mutation processing, options loading, and URL-change handling now log explicitly instead of failing silently
+
 ## [1.1.30] - 2026-03-27
 
 ### Fixed
