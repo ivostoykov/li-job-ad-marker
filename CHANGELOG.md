@@ -1,18 +1,22 @@
 # Changelog
 
-## [1.1.43] - 2026-03-29
+## [1.1.46] - 2026-03-29
 
 ### Added
 - `Ageing limit (days)` option on the options page, with a live disabled-state hint when the value is outside the supported range
-- Dedicated ageing marker style for classic LinkedIn job-card publish dates
-- `markDetailPanelAging()` for the classic right-hand job-details panel, using the existing mutation and URL-change flow instead of DOM polling
+- Dedicated ageing marker styles for list and detail age tokens across the supported LinkedIn jobs surfaces
+- `markDetailPanelAging()` for right-hand job details, using the existing mutation and URL-change flow instead of DOM polling
 
 ### Changed
 - Ageing-limit settings now refresh both list-card and detail-panel marking live after save
+- AI-generated `/jobs/search-results/` cards now resolve ageing from relative-age spans instead of relying on paragraph position
+- AI-generated `/jobs/search-results/` right-hand details now scope ageing to the top summary row only, avoiding lower `Application status` age text
 
 ### Fixed
 - Classic left-list cards with `time[datetime]` can now be highlighted when their age is above the configured threshold
 - Classic right-hand detail panels can now highlight the relative age token when the configured ageing rule matches
+- AI-generated `/jobs/search-results/` left-list cards can now highlight relative age tokens such as `4 days ago` using the same configured threshold
+- AI-generated `/jobs/search-results/` right-hand detail panels can now highlight the publish-age token from the top summary row
 - Invalid ageing-limit values are now treated as disabled instead of producing partial behaviour
 
 ## [1.1.35] - 2026-03-28

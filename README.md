@@ -20,13 +20,14 @@ It then applies visual marks:
 - `Viewed`: the card is faded with reduced opacity
 - `Applied`: the card gets a green outline
 - `Blacklisted company`: the company line gets a reddish background and strikethrough
-- `Aging`: classic LinkedIn publish-date tokens can be highlighted in orange when they are older than your configured threshold
+- `Ageing`: LinkedIn publish-age tokens can be highlighted in orange when they are older than your configured threshold
 
 Blacklisted companies are independent of job state, so a job can be both `Applied` and `Blacklisted`, or `Viewed` and `Blacklisted`.
 
-On the classic LinkedIn two-pane jobs layout, the ageing rule can mark:
+On supported LinkedIn jobs layouts, the ageing rule can mark:
 
 - the publish date in the left-hand card list when LinkedIn exposes `time[datetime]`
+- the relative age token in the left-hand AI-generated search cards, such as `4 days ago`
 - the relative age token in the right-hand details panel, such as `2 weeks ago`
 
 ## How Viewed Jobs Are Tracked
@@ -125,7 +126,7 @@ LinkedIn job lists are rendered asynchronously and can change without a traditio
 
 - waiting for job cards to appear after page load
 - watching the DOM for newly inserted or replaced cards
-- watching relevant classic job-details mutations for right-panel ageing updates
+- watching relevant job-details mutations for right-panel ageing updates
 - re-marking cards after SPA navigation into jobs pages
 - reapplying colour settings when synced options change
 
@@ -150,11 +151,11 @@ Do not load the `src/` directory on its own. Load the repository root, where `ma
 
 ## Current Version
 
-Current manifest version: `1.1.40`
+Current manifest version: `1.1.46`
 
 ## Limitations
 
 - This is a Chrome extension, not a published cross-browser package
 - Runtime behaviour on live LinkedIn pages still depends on LinkedIn’s DOM structure
-- Ageing support is currently intended for the classic LinkedIn jobs surface; left-list ageing depends on `time[datetime]`, while right-panel ageing depends on English relative text such as `2 weeks ago`
+- Ageing support currently covers the classic LinkedIn jobs surface and the AI-generated `/jobs/search-results/` surface; relative-age matching still depends on English text such as `2 weeks ago`
 - The durable project notes still contain one open documentation question around the precise definition of `viewed`

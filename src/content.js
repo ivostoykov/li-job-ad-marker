@@ -22,11 +22,11 @@ function getTextContent(el) {
 }
 
 function isRelativeAgeText(text) {
-  return /^\d+\s+(hour|day|week|month)s?\s+ago$/i.test(text ?? '');
+  return /^\d+\s+(minute|hour|day|week|month)s?\s+ago$/i.test(text ?? '');
 }
 
 function parseRelativeAgeText(text) {
-  const match = String(text ?? '').match(/^(\d+)\s+(hour|day|week|month)s?\s+ago$/i);
+  const match = String(text ?? '').match(/^(\d+)\s+(minute|hour|day|week|month)s?\s+ago$/i);
   if (!match) return null;
 
   return {
@@ -73,6 +73,31 @@ function getMeaningfulTextEntries(card, selector = 'p') {
     .filter(({ text }) => text && text !== '·');
 }
 
+function findRelativeAgeElement(root, selector = 'span') {
+  if (!root) return null;
+
+  return [...root.querySelectorAll(selector)]
+    .find((el) => isRelativeAgeText(getTextContent(el))) || null;
+}
+
+function findClosestAncestorWithRelativeAge(el, stopEl) {
+  let current = el?.parentElement || null;
+
+  while (current && current !== stopEl) {
+    if (
+      current.matches?.('div, section, article') &&
+      findRelativeAgeElement(current, 'span, p, strong')
+    ) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+
+  return stopEl && findRelativeAgeElement(stopEl, 'span, p, strong')
+    ? stopEl
+    : null;
+}
+
 function extractJobId(anchor) {
   const match = anchor?.href?.match(JOB_LINK_RE);
   return match ? match[1] : null;
@@ -115,10 +140,7 @@ const defaultJobsAdapter = {
     return document.querySelector(JOB_DETAIL_PANEL_SELECTOR);
   },
   getDetailPanelAgeElement(panel = this.getDetailPanelElement()) {
-    if (!panel) return null;
-
-    return [...panel.querySelectorAll('span, strong')]
-      .find((el) => isRelativeAgeText(getTextContent(el))) || null;
+    return findRelativeAgeElement(panel, 'span, strong');
   },
   getLinkedInJobState(card) {
     const text = getTextContent(card?.querySelector('.job-card-container__footer-job-state'));
@@ -203,14 +225,23 @@ const aiSearchAdapter = {
   getStateElement(card) {
     return getMeaningfulTextEntries(card).find(({ text }) => text === 'Applied' || text === 'Viewed')?.el || null;
   },
-  getAgeingElement() {
-    return null;
+  getAgeingElement(card) {
+    return findRelativeAgeElement(card);
   },
   getDetailPanelElement() {
-    return null;
+    return [...document.querySelectorAll('div[role="main"]')]
+      .find((panel) => !!panel.querySelector('a[href*="/jobs/view/"]')) || null;
   },
-  getDetailPanelAgeElement() {
-    return null;
+  getDetailPanelAgeElement(panel = this.getDetailPanelElement()) {
+    if (!panel) return null;
+
+    const titleLink = panel.querySelector('a[href*="/jobs/view/"]');
+    if (!titleLink) return null;
+
+    const topSummaryBlock = findClosestAncestorWithRelativeAge(titleLink, panel);
+    if (!topSummaryBlock) return null;
+
+    return findRelativeAgeElement(topSummaryBlock, 'span, p, strong');
   },
   getCompanyName(card) {
     return getTextContent(this.getCompanyElement(card));
@@ -397,8 +428,11 @@ function applyColourSettings(colours) {
 function shouldMarkAgeing(card, adapter, ageingLimitDays) {
   if (ageingLimitDays === null) return false;
 
-  const datetime = adapter.getAgeingElement?.(card)?.getAttribute('datetime');
-  if (!datetime) return false;
+  const ageingElement = adapter.getAgeingElement?.(card);
+  const datetime = ageingElement?.getAttribute('datetime');
+  if (!datetime) {
+    return shouldMarkDetailPanelAgeing(getTextContent(ageingElement), ageingLimitDays);
+  }
 
   const ageInDays = getAgeInDays(datetime);
   return ageInDays !== null && ageInDays > ageingLimitDays;
@@ -410,7 +444,7 @@ function shouldMarkDetailPanelAgeing(ageText, ageingLimitDays) {
   const age = parseRelativeAgeText(ageText);
   if (!age) return false;
 
-  if (age.unit === 'hour') return false;
+  if (age.unit === 'minute' || age.unit === 'hour') return false;
   if (age.unit === 'day') return age.value > ageingLimitDays;
   return true;
 }
