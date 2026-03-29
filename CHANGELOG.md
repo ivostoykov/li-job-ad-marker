@@ -3,8 +3,8 @@
 ## [1.1.50] - 2026-03-29
 
 ### Added
-- `Treat Promoted and Reposted as Viewed` checkbox on the options page — when enabled, cards carrying a `Promoted` or `Reposted` label are treated as `viewed`, dimmed accordingly, and persisted to the DB when a job ID is available
-- `Unwanted title words` textarea on the options page (comma-separated, case-insensitive) — any card whose title contains a listed word or phrase is struck through with a red double underline
+- Now the user can treat "*Promoted*" and "*Reposted*" as *Viewed* by switching the checkbox on the options page — when enabled, cards carrying a `Promoted` or `Reposted` label are treated as `viewed`
+- Added `Unwanted title words` textarea on the options page (comma-separated, case-insensitive) — to improve search result by filtering off any title that contains a listed word or phrase
 - Unwanted-title marking also applies to the right-hand detail panel title, updated live on panel navigation
 
 ### Changed
