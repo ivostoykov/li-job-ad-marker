@@ -5,6 +5,7 @@ function normaliseOptions(options) {
     ...SETTINGS_DEFAULTS,
     ...options,
     ageingLimitDays: normaliseAgeingLimitDays(options?.ageingLimitDays),
+    unwantedTitleWords: typeof options?.unwantedTitleWords === 'string' ? options.unwantedTitleWords : '',
     colours: { ...SETTINGS_DEFAULTS.colours, ...(options?.colours ?? {}) }
   };
 }
@@ -17,6 +18,8 @@ function formToOptions() {
   return {
     debug: document.getElementById('debug').checked,
     ageingLimitDays: getAgeingLimitInputValue(),
+    treatPromotedAsViewed: document.getElementById('treat-promoted-as-viewed').checked,
+    unwantedTitleWords: document.getElementById('unwanted-title-words').value,
     colours: {
       viewed: parseFloat(document.getElementById('colour-viewed').value),
       applied: document.getElementById('colour-applied').value,
@@ -28,6 +31,8 @@ function formToOptions() {
 function populateForm(options) {
   document.getElementById('debug').checked = options.debug;
   document.getElementById('ageing-limit-days').value = options.ageingLimitDays;
+  document.getElementById('treat-promoted-as-viewed').checked = options.treatPromotedAsViewed;
+  document.getElementById('unwanted-title-words').value = options.unwantedTitleWords;
   document.getElementById('colour-viewed').value = options.colours.viewed;
   document.getElementById('colour-viewed-val').value = options.colours.viewed;
   document.getElementById('colour-applied').value = options.colours.applied;

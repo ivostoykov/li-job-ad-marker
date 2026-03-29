@@ -21,8 +21,9 @@ It then applies visual marks:
 - `Applied`: the card gets a green outline
 - `Blacklisted company`: the company line gets a reddish background and strikethrough
 - `Ageing`: LinkedIn publish-age tokens can be highlighted in orange when they are older than your configured threshold
+- `Unwanted title`: cards whose title contains a configured word or phrase are struck through with a red double underline
 
-Blacklisted companies are independent of job state, so a job can be both `Applied` and `Blacklisted`, or `Viewed` and `Blacklisted`.
+Blacklisted companies and unwanted titles are independent of job state, so a card can be both `Applied` and struck through, or `Viewed` and `Blacklisted`.
 
 On supported LinkedIn jobs layouts, the ageing rule can mark:
 
@@ -55,6 +56,8 @@ The options page lets you configure a small set of extension settings stored in 
 
 - debug logging on/off
 - ageing limit in days
+- treat Promoted and Reposted as Viewed
+- unwanted title words (comma-separated)
 - viewed opacity
 - applied colour
 - blacklisted colour
@@ -151,7 +154,7 @@ Do not load the `src/` directory on its own. Load the repository root, where `ma
 
 ## Current Version
 
-Current manifest version: `1.1.46`
+Current manifest version: `1.1.50`
 
 ## Limitations
 

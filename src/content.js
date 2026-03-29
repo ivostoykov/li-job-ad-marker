@@ -142,10 +142,15 @@ const defaultJobsAdapter = {
   getDetailPanelAgeElement(panel = this.getDetailPanelElement()) {
     return findRelativeAgeElement(panel, 'span, strong');
   },
+  getDetailPanelTitleElement() {
+    return document.querySelector('.job-details-jobs-unified-top-card__job-title a') || null;
+  },
   getLinkedInJobState(card) {
     const text = getTextContent(card?.querySelector('.job-card-container__footer-job-state'));
     if (text === 'Applied') return 'applied';
     if (text === 'Viewed') return 'viewed';
+    const footerItems = [...(card?.querySelectorAll('.job-card-container__footer-item') || [])];
+    if (footerItems.some((el) => /^(Promoted|Reposted)$/i.test(getTextContent(el)))) return 'promoted';
     return null;
   },
   getCurrentJobId() {
@@ -243,6 +248,10 @@ const aiSearchAdapter = {
 
     return findRelativeAgeElement(topSummaryBlock, 'span, p, strong');
   },
+  getDetailPanelTitleElement() {
+    const panel = this.getDetailPanelElement();
+    return panel?.querySelector('a[href*="/jobs/view/"]') || null;
+  },
   getCompanyName(card) {
     return getTextContent(this.getCompanyElement(card));
   },
@@ -250,6 +259,7 @@ const aiSearchAdapter = {
     const texts = getMeaningfulTextEntries(card).map(({ text }) => text);
     if (texts.includes('Applied')) return 'applied';
     if (texts.includes('Viewed')) return 'viewed';
+    if (texts.some((t) => /^(Promoted|Reposted)$/i.test(t))) return 'promoted';
     return null;
   },
   hasReadyJobCards() {
@@ -376,12 +386,12 @@ function clearCardMarks(card, adapter = refreshPageAdapter()) {
   const stateElement = adapter.getStateElement?.(card);
   const ageingElement = adapter.getAgeingElement?.(card);
   companyElement?.classList.remove('ljm-blacklisted-company');
-  titleElement?.classList.remove('ljm-applied-title');
+  titleElement?.classList.remove('ljm-applied-title', 'ljm-unwanted-title');
   stateElement?.classList.remove('ljm-applied-state');
   ageingElement?.classList.remove('ljm-ageing');
 }
 
-function applyMark(card, jobState, isBlacklisted, isAgeing, adapter = refreshPageAdapter()) {
+function applyMark(card, jobState, isBlacklisted, isAgeing, isUnwantedTitle, adapter = refreshPageAdapter()) {
   clearCardMarks(card, adapter);
   const companyElement = adapter.getCompanyElement?.(card);
   const titleElement = adapter.getTitleElement?.(card);
@@ -398,6 +408,7 @@ function applyMark(card, jobState, isBlacklisted, isAgeing, adapter = refreshPag
   else if (jobState === 'viewed') card.classList.add('ljm-viewed');
 
   if (isAgeing && ageingElement) ageingElement.classList.add('ljm-ageing');
+  if (isUnwantedTitle && titleElement) titleElement.classList.add('ljm-unwanted-title');
 }
 
 function clearAllCardMarks() {
@@ -423,6 +434,17 @@ function applyColourSettings(colours) {
     --ljm-blacklisted-bg: ${hexToRgba(colours.blacklisted, 0.15)};
   }`;
   logDebug('colours applied', colours);
+}
+
+function parseUnwantedTitleWords(str) {
+  if (!str) return [];
+  return str.split(',').map((w) => w.trim()).filter(Boolean);
+}
+
+function titleMatchesUnwanted(titleText, words) {
+  if (!titleText || !words.length) return false;
+  const lower = titleText.toLowerCase();
+  return words.some((w) => lower.includes(w.toLowerCase()));
 }
 
 function shouldMarkAgeing(card, adapter, ageingLimitDays) {
@@ -475,8 +497,31 @@ async function markDetailPanelAging() {
   }
 }
 
+function clearDetailPanelUnwantedTitle() {
+  document.querySelectorAll('.ljm-detail-unwanted-title').forEach((el) => {
+    el.classList.remove('ljm-detail-unwanted-title');
+  });
+}
+
+async function markDetailPanelUnwantedTitle() {
+  clearDetailPanelUnwantedTitle();
+  if (!enabled) return;
+
+  const adapter = refreshPageAdapter();
+  const titleEl = adapter.getDetailPanelTitleElement?.();
+  if (!titleEl) return;
+
+  const options = await getOptions();
+  const words = parseUnwantedTitleWords(options.unwantedTitleWords);
+  if (!words.length) return;
+
+  if (titleMatchesUnwanted(getTextContent(titleEl), words)) {
+    titleEl.classList.add('ljm-detail-unwanted-title');
+  }
+}
+
 async function markPage() {
-  await Promise.all([markCards(), markDetailPanelAging()]);
+  await Promise.all([markCards(), markDetailPanelAging(), markDetailPanelUnwantedTitle()]);
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -498,6 +543,7 @@ async function markCards() {
 
   const [allJobs, blacklist, options] = await Promise.all([dbGetAllJobs(), blGetList(), getOptions()]);
   const ageingLimitDays = getValidAgeingLimitDays(options);
+  const unwantedWords = parseUnwantedTitleWords(options.unwantedTitleWords);
   const jobMap = {};
   allJobs.forEach((j) => { jobMap[j.id] = j; });
 
@@ -508,19 +554,23 @@ async function markCards() {
     const company = adapter.getCompanyName(card);
     const existing = jobId ? jobMap[jobId] : null;
     const linkedInState = adapter.getLinkedInJobState(card);
+    const effectiveLinkedInState = (options.treatPromotedAsViewed && linkedInState === 'promoted')
+      ? 'viewed'
+      : linkedInState;
     const isAgeing = shouldMarkAgeing(card, adapter, ageingLimitDays);
+    const isUnwantedTitle = titleMatchesUnwanted(getTextContent(adapter.getTitleElement?.(card)), unwantedWords);
 
-    if (jobId && linkedInState && shouldPromoteState(existing?.type, linkedInState)) {
-      saves.push(dbSaveJob(jobId, linkedInState).then(() => { jobMap[jobId] = { id: jobId, type: linkedInState }; }));
+    if (jobId && effectiveLinkedInState && shouldPromoteState(existing?.type, effectiveLinkedInState)) {
+      saves.push(dbSaveJob(jobId, effectiveLinkedInState).then(() => { jobMap[jobId] = { id: jobId, type: effectiveLinkedInState }; }));
     }
 
     const isBlacklisted = !!(company && blacklist.includes(company));
-    const jobState = shouldPromoteState(existing?.type, linkedInState)
-      ? linkedInState
-      : (existing?.type ?? linkedInState);
+    const jobState = shouldPromoteState(existing?.type, effectiveLinkedInState)
+      ? effectiveLinkedInState
+      : (existing?.type ?? effectiveLinkedInState);
 
-    if (!jobId && !company && !jobState && !isAgeing) return;
-    applyMark(card, jobState, isBlacklisted, isAgeing, adapter);
+    if (!jobId && !company && !jobState && !isAgeing && !isUnwantedTitle) return;
+    applyMark(card, jobState, isBlacklisted, isAgeing, isUnwantedTitle, adapter);
   });
 
   await Promise.all(saves);

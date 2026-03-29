@@ -3,6 +3,8 @@ const SETTINGS_KEY = 'ljm-options';
 const SETTINGS_DEFAULTS = {
   debug: false,
   ageingLimitDays: '',
+  treatPromotedAsViewed: false,
+  unwantedTitleWords: '',
   colours: {
     viewed: 0.45,
     applied: '#32cd32',

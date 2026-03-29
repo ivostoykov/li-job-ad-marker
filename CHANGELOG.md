@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.50] - 2026-03-29
+
+### Added
+- `Treat Promoted and Reposted as Viewed` checkbox on the options page — when enabled, cards carrying a `Promoted` or `Reposted` label are treated as `viewed`, dimmed accordingly, and persisted to the DB when a job ID is available
+- `Unwanted title words` textarea on the options page (comma-separated, case-insensitive) — any card whose title contains a listed word or phrase is struck through with a red double underline
+- Unwanted-title marking also applies to the right-hand detail panel title, updated live on panel navigation
+
+### Changed
+- `markPage()` now runs `markDetailPanelUnwantedTitle()` alongside the existing card and ageing passes
+- `applyMark()` accepts an `isUnwantedTitle` flag, keeping the mark independent of job state so applied or viewed cards can also carry the strikethrough
+
 ## [1.1.46] - 2026-03-29
 
 ### Added

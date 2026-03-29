@@ -48,3 +48,10 @@ a[componentkey][href*="currentJobId="].ljm-applied {
   background-color: orange;
   padding: 0 1rem;
 }
+
+.ljm-unwanted-title,
+.ljm-detail-unwanted-title {
+  text-decoration-color: red !important;
+  text-decoration-style: double !important;
+  text-decoration: line-through;
+}
