@@ -4,7 +4,7 @@
 
 ---
 
-LinkedIn Job Ad Marker is an extension available for Chrome and Firefox applied solely on LinkedIn job search pages. It helps you work through large job lists faster by marking adverts you have already seen, jobs you have applied for, and companies you do not want to deal with.
+LinkedIn Job Ad Marker is an extension available for Chrome and Firefox applied solely on LinkedIn job search pages. It helps you work through large job lists faster by marking adverts you have already seen, jobs you have applied for, companies you do not want to deal with, and older listings you may want to skip.
 
 The aim is simple: reduce repeat scanning. Instead of re-reading the same cards every time LinkedIn reshuffles, reloads, or promotes old listings again, the extension adds lightweight visual cues directly to the job list.
 
@@ -13,15 +13,21 @@ The aim is simple: reduce repeat scanning. Instead of re-reading the same cards 
 
 ## What It Does
 
-On LinkedIn job pages, the extension scans job cards in the left-hand list, extracts the LinkedIn job ID from each card link, and compares that against locally stored data.
+On supported LinkedIn job pages, the extension scans job cards, extracts job identity where available, and compares that against locally stored data.
 
 It then applies visual marks:
 
 - `Viewed`: the card is faded with reduced opacity
 - `Applied`: the card gets a green outline
 - `Blacklisted company`: the company line gets a reddish background and strikethrough
+- `Aging`: classic LinkedIn publish-date tokens can be highlighted in orange when they are older than your configured threshold
 
 Blacklisted companies are independent of job state, so a job can be both `Applied` and `Blacklisted`, or `Viewed` and `Blacklisted`.
+
+On the classic LinkedIn two-pane jobs layout, the ageing rule can mark:
+
+- the publish date in the left-hand card list when LinkedIn exposes `time[datetime]`
+- the relative age token in the right-hand details panel, such as `2 weeks ago`
 
 ## How Viewed Jobs Are Tracked
 
@@ -47,6 +53,7 @@ Right-clicking on a LinkedIn jobs page gives you these actions:
 The options page lets you configure a small set of extension settings stored in `chrome.storage.sync`:
 
 - debug logging on/off
+- ageing limit in days
 - viewed opacity
 - applied colour
 - blacklisted colour
@@ -59,7 +66,9 @@ It also provides:
 - `Import`
 - `Close`
 
-Colour changes are applied live to LinkedIn pages through CSS variables, so a page reload is not required.
+Colour and ageing changes are applied live to LinkedIn pages, so a page reload is not required.
+
+`Ageing limit (days)` accepts values from `1` to `7`. Any other value is treated as disabled and shown as `(disabled)` in the options page while remaining editable.
 
 ## Export and Import
 
@@ -116,8 +125,11 @@ LinkedIn job lists are rendered asynchronously and can change without a traditio
 
 - waiting for job cards to appear after page load
 - watching the DOM for newly inserted or replaced cards
+- watching relevant classic job-details mutations for right-panel ageing updates
 - re-marking cards after SPA navigation into jobs pages
 - reapplying colour settings when synced options change
+
+The extension currently routes DOM-specific behaviour through page adapters so it can support multiple LinkedIn job surfaces without relying on one shared selector set.
 
 ## Permissions
 
@@ -138,10 +150,11 @@ Do not load the `src/` directory on its own. Load the repository root, where `ma
 
 ## Current Version
 
-Current manifest version: `1.1.18`
+Current manifest version: `1.1.40`
 
 ## Limitations
 
 - This is a Chrome extension, not a published cross-browser package
 - Runtime behaviour on live LinkedIn pages still depends on LinkedIn’s DOM structure
+- Ageing support is currently intended for the classic LinkedIn jobs surface; left-list ageing depends on `time[datetime]`, while right-panel ageing depends on English relative text such as `2 weeks ago`
 - The durable project notes still contain one open documentation question around the precise definition of `viewed`

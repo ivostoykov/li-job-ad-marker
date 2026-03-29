@@ -9,6 +9,7 @@ AGENTS.md
 CLAUDE.md
 .mcp.json
 *.zip
+.codex
 
 # Logs
 logs

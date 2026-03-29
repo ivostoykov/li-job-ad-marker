@@ -4,6 +4,7 @@ const JOB_LINK_RE = /\/jobs\/view\/(\d+)/;
 const JOB_CARD_SELECTOR = '.job-card-container';
 const JOB_LINK_SELECTOR = 'a[href*="/jobs/view/"]';
 const JOB_CARD_WRAPPER_SELECTOR = 'li[data-occludable-job-id]';
+const JOB_DETAIL_PANEL_SELECTOR = '.job-details-jobs-unified-top-card__tertiary-description-container';
 const AI_SEARCH_ROOT_SELECTOR = 'main div[componentkey="SearchResultsMainContent"]';
 const AI_SEARCH_CARD_SELECTOR = 'div[role="button"][componentkey], a[componentkey][href*="currentJobId="]';
 
@@ -18,6 +19,52 @@ function isElement(node) {
 
 function getTextContent(el) {
   return el?.textContent?.trim() || null;
+}
+
+function isRelativeAgeText(text) {
+  return /^\d+\s+(hour|day|week|month)s?\s+ago$/i.test(text ?? '');
+}
+
+function parseRelativeAgeText(text) {
+  const match = String(text ?? '').match(/^(\d+)\s+(hour|day|week|month)s?\s+ago$/i);
+  if (!match) return null;
+
+  return {
+    value: Number.parseInt(match[1], 10),
+    unit: match[2].toLowerCase()
+  };
+}
+
+function parseDateFromDatetime(datetime) {
+  const match = String(datetime ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10) - 1;
+  const day = Number.parseInt(match[3], 10);
+  const date = new Date(year, month, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function getAgeInDays(datetime) {
+  const publishedDate = parseDateFromDatetime(datetime);
+  if (!publishedDate) return null;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffMs = today.getTime() - publishedDate.getTime();
+  if (diffMs < 0) return null;
+
+  return Math.floor(diffMs / 86400000);
 }
 
 function getMeaningfulTextEntries(card, selector = 'p') {
@@ -61,6 +108,18 @@ const defaultJobsAdapter = {
   getStateElement(card) {
     return card?.querySelector('.job-card-container__footer-job-state') || null;
   },
+  getAgeingElement(card) {
+    return card?.querySelector('time[datetime]') || null;
+  },
+  getDetailPanelElement() {
+    return document.querySelector(JOB_DETAIL_PANEL_SELECTOR);
+  },
+  getDetailPanelAgeElement(panel = this.getDetailPanelElement()) {
+    if (!panel) return null;
+
+    return [...panel.querySelectorAll('span, strong')]
+      .find((el) => isRelativeAgeText(getTextContent(el))) || null;
+  },
   getLinkedInJobState(card) {
     const text = getTextContent(card?.querySelector('.job-card-container__footer-job-state'));
     if (text === 'Applied') return 'applied';
@@ -76,10 +135,12 @@ const defaultJobsAdapter = {
   isRelevantElement(el) {
     if (!isElement(el)) return false;
     if (this.getCardFromElement(el)) return true;
+    const detailPanel = this.getDetailPanelElement();
+    if (detailPanel && (detailPanel === el || detailPanel.contains(el))) return true;
 
     return (
-      el.matches(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}`) ||
-      !!el.querySelector(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}`)
+      el.matches(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}, ${JOB_DETAIL_PANEL_SELECTOR}`) ||
+      !!el.querySelector(`${JOB_CARD_SELECTOR}, ${JOB_LINK_SELECTOR}, ${JOB_DETAIL_PANEL_SELECTOR}`)
     );
   }
 };
@@ -141,6 +202,15 @@ const aiSearchAdapter = {
   },
   getStateElement(card) {
     return getMeaningfulTextEntries(card).find(({ text }) => text === 'Applied' || text === 'Viewed')?.el || null;
+  },
+  getAgeingElement() {
+    return null;
+  },
+  getDetailPanelElement() {
+    return null;
+  },
+  getDetailPanelAgeElement() {
+    return null;
   },
   getCompanyName(card) {
     return getTextContent(this.getCompanyElement(card));
@@ -273,16 +343,19 @@ function clearCardMarks(card, adapter = refreshPageAdapter()) {
   const companyElement = adapter.getCompanyElement?.(card);
   const titleElement = adapter.getTitleElement?.(card);
   const stateElement = adapter.getStateElement?.(card);
+  const ageingElement = adapter.getAgeingElement?.(card);
   companyElement?.classList.remove('ljm-blacklisted-company');
   titleElement?.classList.remove('ljm-applied-title');
   stateElement?.classList.remove('ljm-applied-state');
+  ageingElement?.classList.remove('ljm-ageing');
 }
 
-function applyMark(card, jobState, isBlacklisted, adapter = refreshPageAdapter()) {
+function applyMark(card, jobState, isBlacklisted, isAgeing, adapter = refreshPageAdapter()) {
   clearCardMarks(card, adapter);
   const companyElement = adapter.getCompanyElement?.(card);
   const titleElement = adapter.getTitleElement?.(card);
   const stateElement = adapter.getStateElement?.(card);
+  const ageingElement = adapter.getAgeingElement?.(card);
 
   if (isBlacklisted) card.classList.add('ljm-blacklisted');
   if (isBlacklisted && companyElement) companyElement.classList.add('ljm-blacklisted-company');
@@ -292,6 +365,8 @@ function applyMark(card, jobState, isBlacklisted, adapter = refreshPageAdapter()
     stateElement?.classList.add('ljm-applied-state');
   }
   else if (jobState === 'viewed') card.classList.add('ljm-viewed');
+
+  if (isAgeing && ageingElement) ageingElement.classList.add('ljm-ageing');
 }
 
 function clearAllCardMarks() {
@@ -319,15 +394,67 @@ function applyColourSettings(colours) {
   logDebug('colours applied', colours);
 }
 
+function shouldMarkAgeing(card, adapter, ageingLimitDays) {
+  if (ageingLimitDays === null) return false;
+
+  const datetime = adapter.getAgeingElement?.(card)?.getAttribute('datetime');
+  if (!datetime) return false;
+
+  const ageInDays = getAgeInDays(datetime);
+  return ageInDays !== null && ageInDays > ageingLimitDays;
+}
+
+function shouldMarkDetailPanelAgeing(ageText, ageingLimitDays) {
+  if (ageingLimitDays === null) return false;
+
+  const age = parseRelativeAgeText(ageText);
+  if (!age) return false;
+
+  if (age.unit === 'hour') return false;
+  if (age.unit === 'day') return age.value > ageingLimitDays;
+  return true;
+}
+
+function clearDetailPanelAging() {
+  document.querySelectorAll('.ljm-detail-ageing').forEach((el) => {
+    el.classList.remove('ljm-detail-ageing');
+  });
+}
+
+async function markDetailPanelAging() {
+  clearDetailPanelAging();
+  if (!enabled) return;
+
+  const adapter = refreshPageAdapter();
+  const panel = adapter.getDetailPanelElement?.();
+  if (!panel) return;
+
+  const options = await getOptions();
+  const ageingLimitDays = getValidAgeingLimitDays(options);
+  if (ageingLimitDays === null) return;
+
+  const ageElement = adapter.getDetailPanelAgeElement?.(panel);
+  if (!ageElement) return;
+
+  if (shouldMarkDetailPanelAgeing(getTextContent(ageElement), ageingLimitDays)) {
+    ageElement.classList.add('ljm-detail-ageing');
+  }
+}
+
+async function markPage() {
+  await Promise.all([markCards(), markDetailPanelAging()]);
+}
+
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  try {
-    if (areaName === 'sync' && changes[SETTINGS_KEY]) {
+  if (areaName !== 'sync' || !changes[SETTINGS_KEY]) return;
+
+  Promise.resolve()
+    .then(() => {
       const newOptions = changes[SETTINGS_KEY].newValue;
       if (newOptions?.colours) applyColourSettings(newOptions.colours);
-    }
-  } catch (e) {
-    logError('Failed to apply updated colour settings:', e);
-  }
+      return markPage();
+    })
+    .catch((e) => logError('Failed to apply updated settings:', e));
 });
 
 async function markCards() {
@@ -335,7 +462,8 @@ async function markCards() {
   const adapter = refreshPageAdapter();
   logDebug(`markCards() with adapter "${adapter.name}"`);
 
-  const [allJobs, blacklist] = await Promise.all([dbGetAllJobs(), blGetList()]);
+  const [allJobs, blacklist, options] = await Promise.all([dbGetAllJobs(), blGetList(), getOptions()]);
+  const ageingLimitDays = getValidAgeingLimitDays(options);
   const jobMap = {};
   allJobs.forEach((j) => { jobMap[j.id] = j; });
 
@@ -346,6 +474,7 @@ async function markCards() {
     const company = adapter.getCompanyName(card);
     const existing = jobId ? jobMap[jobId] : null;
     const linkedInState = adapter.getLinkedInJobState(card);
+    const isAgeing = shouldMarkAgeing(card, adapter, ageingLimitDays);
 
     if (jobId && linkedInState && shouldPromoteState(existing?.type, linkedInState)) {
       saves.push(dbSaveJob(jobId, linkedInState).then(() => { jobMap[jobId] = { id: jobId, type: linkedInState }; }));
@@ -356,8 +485,8 @@ async function markCards() {
       ? linkedInState
       : (existing?.type ?? linkedInState);
 
-    if (!jobId && !company && !jobState) return;
-    applyMark(card, jobState, isBlacklisted, adapter);
+    if (!jobId && !company && !jobState && !isAgeing) return;
+    applyMark(card, jobState, isBlacklisted, isAgeing, adapter);
   });
 
   await Promise.all(saves);
@@ -371,7 +500,7 @@ async function recordCurrentJob() {
   if (!existing) {
     logDebug(`recording viewed: ${jobId}`);
     await dbSaveJob(jobId, 'viewed');
-    await markCards();
+    await markPage();
   }
 }
 
@@ -400,7 +529,7 @@ addMessageAction('blacklist-toggle', async () => {
 
   const listed = await blIncludes(company);
   await (listed ? blRemove(company) : blAdd(company));
-  await markCards();
+  await markPage();
 });
 
 addMessageAction('applied-mark', async () => {
@@ -415,7 +544,7 @@ addMessageAction('applied-mark', async () => {
 
   logDebug(`marking applied: ${jobId}`);
   await dbSaveJob(jobId, 'applied');
-  await markCards();
+  await markPage();
 });
 
 addMessageAction('marker-toggle', async () => {
@@ -423,8 +552,9 @@ addMessageAction('marker-toggle', async () => {
 
   if (!enabled) {
     clearAllCardMarks();
+    clearDetailPanelAging();
   } else {
-    await markCards();
+    await markPage();
   }
 });
 
@@ -472,7 +602,7 @@ function observeCards(onReady) {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
       try {
-        await markCards();
+        await markPage();
 
         if (!ready && hasReadyJobCards()) {
           ready = true;
@@ -497,7 +627,7 @@ function observeCards(onReady) {
 function startOnJobsPage() {
   refreshPageAdapter();
   new Promise((resolve) => observeCards(resolve))
-    .then(() => markCards())
+    .then(() => markPage())
     .then(() => recordCurrentJob())
     .catch((e) => logError('Failed to start jobs page handling:', e));
 }

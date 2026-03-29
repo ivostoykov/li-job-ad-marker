@@ -1,8 +1,22 @@
 let savedOptions = null;
 
+function normaliseOptions(options) {
+  return {
+    ...SETTINGS_DEFAULTS,
+    ...options,
+    ageingLimitDays: normaliseAgeingLimitDays(options?.ageingLimitDays),
+    colours: { ...SETTINGS_DEFAULTS.colours, ...(options?.colours ?? {}) }
+  };
+}
+
+function getAgeingLimitInputValue() {
+  return document.getElementById('ageing-limit-days').value.trim();
+}
+
 function formToOptions() {
   return {
     debug: document.getElementById('debug').checked,
+    ageingLimitDays: getAgeingLimitInputValue(),
     colours: {
       viewed: parseFloat(document.getElementById('colour-viewed').value),
       applied: document.getElementById('colour-applied').value,
@@ -13,10 +27,12 @@ function formToOptions() {
 
 function populateForm(options) {
   document.getElementById('debug').checked = options.debug;
+  document.getElementById('ageing-limit-days').value = options.ageingLimitDays;
   document.getElementById('colour-viewed').value = options.colours.viewed;
   document.getElementById('colour-viewed-val').value = options.colours.viewed;
   document.getElementById('colour-applied').value = options.colours.applied;
   document.getElementById('colour-blacklisted').value = options.colours.blacklisted;
+  updateAgeingLimitStatus();
 }
 
 function isDirty() {
@@ -28,6 +44,12 @@ function showMessage(text, type) {
   const el = document.getElementById('message');
   el.textContent = text;
   el.className = type ?? '';
+}
+
+function updateAgeingLimitStatus() {
+  const status = document.getElementById('ageing-limit-status');
+  const ageingLimitDays = getValidAgeingLimitDays({ ageingLimitDays: getAgeingLimitInputValue() });
+  status.textContent = ageingLimitDays === null ? '(disabled)' : '';
 }
 
 async function getJobsFromLinkedIn() {
@@ -57,15 +79,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.title = `${mf.name} v${mf.version} — Options`;
   document.getElementById('ext-title').textContent = `${mf.name} v${mf.version}`;
 
-  savedOptions = await getOptions();
+  savedOptions = normaliseOptions(await getOptions());
   populateForm(savedOptions);
 
   document.getElementById('colour-viewed').addEventListener('input', (e) => {
     document.getElementById('colour-viewed-val').value = e.target.value;
   });
 
+  document.getElementById('ageing-limit-days').addEventListener('input', () => {
+    updateAgeingLimitStatus();
+  });
+
   document.getElementById('btn-save').addEventListener('click', async () => {
-    const options = formToOptions();
+    const options = normaliseOptions(formToOptions());
     await setOptions(options);
     savedOptions = options;
     showMessage('Saved.', 'success');
@@ -115,8 +141,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           const data = JSON.parse(reader.result);
 
           if (data.options) {
-            await setOptions(data.options);
-            savedOptions = data.options;
+            const importedOptions = normaliseOptions(data.options);
+            await setOptions(importedOptions);
+            savedOptions = importedOptions;
             populateForm(savedOptions);
           }
 
