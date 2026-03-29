@@ -1,6 +1,7 @@
 # LinkedIn Job Ad Marker
 
-<img src="icons/Screenshot.png">
+<img src="media/s01.png">
+<img src="media/s02.png">
 
 ---
 
