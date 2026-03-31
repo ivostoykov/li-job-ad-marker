@@ -1,5 +1,6 @@
 # Dirs
 .aimem/
+.aimem-spec/
 .issues/
 .claude/
 FF/
