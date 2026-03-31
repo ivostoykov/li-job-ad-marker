@@ -1,3 +1,5 @@
+importScripts('src/js/constants.js');
+
 const MENU_BLACKLIST_TOGGLE = 'blacklist-toggle';
 const MENU_MARKER_TOGGLE = 'marker-toggle';
 const MENU_APPLIED_MARK = 'applied-mark';

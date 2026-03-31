@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.52] - 2026-03-31
+
+### Added
+- `src/js/constants.js` — shared constants file (`LOG_MARKER`, `LOG_BADGE_DEBUG`) loaded first in both manifests and imported into the Chrome service worker via `importScripts`
+
+### Changed
+- `log.js` rewritten to match the reference model: only `console.debug` is patched (gated by `debugEnabled`), with badge and correct caller line number via named-function skip; `logDebug`, `logInfo`, `logWarn`, `logError` wrappers removed
+- All `logDebug` / `logWarn` / `logError` call sites in `content.js` replaced with native `console.debug` / `console.warn` / `console.error`
+
 ## [1.1.50] - 2026-03-29
 
 ### Added
