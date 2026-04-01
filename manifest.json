@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Job Ad Marker",
-  "version": "1.1.50",
+  "version": "1.1.52",
   "description": "Marks viewed, applied, and blacklisted company job ads on LinkedIn.",
   "permissions": ["storage", "contextMenus", "tabs"],
   "icons": {
