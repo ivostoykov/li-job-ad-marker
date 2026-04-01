@@ -2,9 +2,14 @@ let debugEnabled = false;
 
 const originalDebug = console.debug.bind(console);
 
+function getLogPrefix(level = 'log') {
+  const badges = { error: '\u{1F7E5}', warn: '\u{1F7E7}', log: '\u{1F7E9}', debug: '\u{1F7E3}', consoleDebug: '\u{1F7E3}' };
+  return `\u270E ${badges[level] ?? badges.log} - ${manifest?.name ?? ''}`;
+}
+
 console.debug = function consoleDebug(...args) {
   if (!debugEnabled) return;
-  originalDebug(`${LOG_MARKER} ${LOG_BADGE_DEBUG} ${manifest?.name ?? ''} - [${getLineNumber(['consoleDebug'])}] -`, ...args);
+  originalDebug(...args);
 };
 
 function setDebugFlag(enabled) {
@@ -19,7 +24,7 @@ async function toggleDebug(enabled) {
     options.debug = enabled;
     await setOptions(options);
   } catch (e) {
-    console.error(`${LOG_MARKER} ${manifest?.name ?? ''} - [${getLineNumber()}] - Failed to toggle debug:`, e);
+    console.error(`${getLogPrefix('error')} - [${getLineNumber()}] - Failed to toggle debug:`, e);
   }
 }
 
@@ -34,7 +39,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 async function init_log(timeout) {
   if (Date.now() > timeout) {
-    console.error(`${LOG_MARKER} ${manifest?.name ?? ''} - [${getLineNumber()}] - init_log timed out`);
+    console.error(`${getLogPrefix('error')} - [${getLineNumber()}] - init_log timed out`);
     return;
   }
   if (typeof getOptions !== 'function') {

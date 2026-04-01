@@ -18,7 +18,6 @@
     {
       "matches": ["https://www.linkedin.com/*"],
       "js": [
-        "src/js/constants.js",
         "src/js/utils.js",
         "src/js/settings.js",
         "src/js/db.js",

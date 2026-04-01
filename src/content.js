@@ -329,7 +329,7 @@ function selectPageAdapter() {
 function refreshPageAdapter() {
   const nextAdapter = selectPageAdapter();
   if (currentPageAdapter.name !== nextAdapter.name) {
-    console.debug(`Using page adapter "${nextAdapter.name}"`);
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Using page adapter "${nextAdapter.name}"`);
   }
   currentPageAdapter = nextAdapter;
   return currentPageAdapter;
@@ -349,7 +349,7 @@ function findCardFromNodes(nodes) {
 
 function getContextCard(action) {
   if (lastRightClickedCard) return lastRightClickedCard;
-  console.warn(`${action}: no job card captured from context menu`);
+  console.warn(`${getLogPrefix(console.warn.name)} - ${getLineNumber()} - ${action}: no job card captured from context menu`);
   return null;
 }
 
@@ -359,7 +359,7 @@ function addMessageAction(action, handler) {
 
     Promise.resolve()
       .then(() => handler(message))
-      .catch((e) => console.error(`${action} failed:`, e));
+      .catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - ${action} failed:`, e));
   });
 }
 
@@ -371,7 +371,7 @@ function addMessageRequest(action, handler) {
       .then(() => handler(message))
       .then((response) => sendResponse(response))
       .catch((e) => {
-        console.error(`${action} failed:`, e);
+        console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - ${action} failed:`, e);
         sendResponse({ ok: false, error: e?.message || String(e) });
       });
 
@@ -433,7 +433,7 @@ function applyColourSettings(colours) {
     --ljm-blacklisted-colour: ${colours.blacklisted};
     --ljm-blacklisted-bg: ${hexToRgba(colours.blacklisted, 0.15)};
   }`;
-  console.debug('colours applied', colours);
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} -  - colours applied`, colours);
 }
 
 function parseUnwantedTitleWords(str) {
@@ -448,10 +448,13 @@ function titleMatchesUnwanted(titleText, words) {
 }
 
 function shouldMarkAgeing(card, adapter, ageingLimitDays) {
+  if (!card) { console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - no card`); return false; }
+  if (!adapter) { console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - no adapter`); return false; }
   if (ageingLimitDays === null) return false;
 
   const ageingElement = adapter.getAgeingElement?.(card);
-  const datetime = ageingElement?.getAttribute('datetime');
+  if (!ageingElement) return false;
+  const datetime = ageingElement.getAttribute('datetime');
   if (!datetime) {
     return shouldMarkDetailPanelAgeing(getTextContent(ageingElement), ageingLimitDays);
   }
@@ -533,13 +536,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (newOptions?.colours) applyColourSettings(newOptions.colours);
       return markPage();
     })
-    .catch((e) => console.error('Failed to apply updated settings:', e));
+    .catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to apply updated settings:`, e));
 });
 
 async function markCards() {
   if (!enabled) return;
   const adapter = refreshPageAdapter();
-  console.debug(`markCards() with adapter "${adapter.name}"`);
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - markCards() with adapter "${adapter.name}"`);
 
   const [allJobs, blacklist, options] = await Promise.all([dbGetAllJobs(), blGetList(), getOptions()]);
   const ageingLimitDays = getValidAgeingLimitDays(options);
@@ -582,7 +585,7 @@ async function recordCurrentJob() {
 
   const existing = await dbGetJob(jobId);
   if (!existing) {
-    console.debug(`recording viewed: ${jobId}`);
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - recording viewed: ${jobId}`);
     await dbSaveJob(jobId, 'viewed');
     await markPage();
   }
@@ -596,7 +599,7 @@ document.addEventListener('contextmenu', (e) => {
     lastRightClickedCard = findCardFromNodes(path);
   } catch (err) {
     lastRightClickedCard = null;
-    console.error('Failed to capture context menu target:', err);
+    console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to capture context menu target:`, err);
   }
 });
 
@@ -607,7 +610,7 @@ addMessageAction('blacklist-toggle', async () => {
 
   const company = adapter.getCompanyName(card);
   if (!company) {
-    console.warn('blacklist-toggle: company name not found for selected card');
+    console.warn(`${getLogPrefix(console.warn.name)} - ${getLineNumber()} - blacklist-toggle: company name not found for selected card`);
     return;
   }
 
@@ -622,11 +625,11 @@ addMessageAction('applied-mark', async () => {
 
   const jobId = refreshPageAdapter().getJobId(card);
   if (!jobId) {
-    console.warn('applied-mark: job ID not found for selected card');
+    console.warn(`${getLogPrefix(console.warn.name)} - ${getLineNumber()} - applied-mark: job ID not found for selected card`);
     return;
   }
 
-  console.debug(`marking applied: ${jobId}`);
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - marking applied: ${jobId}`);
   await dbSaveJob(jobId, 'applied');
   await markPage();
 });
@@ -690,11 +693,11 @@ function observeCards(onReady) {
 
         if (!ready && hasReadyJobCards()) {
           ready = true;
-          console.debug(`cards ready for adapter "${refreshPageAdapter().name}"`);
+          console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - cards ready for adapter "${refreshPageAdapter().name}"`);
           onReady();
         }
       } catch (e) {
-        console.error('Failed to process card mutations:', e);
+        console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to process card mutations:`, e);
       }
     }, 300);
   });
@@ -706,6 +709,14 @@ function observeCards(onReady) {
     attributes: true,
     attributeFilter: ['href', 'data-job-id', 'data-occludable-job-id']
   });
+
+  setTimeout(() => {
+    if (!ready && hasReadyJobCards()) {
+      console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - fallback: cards present but observer missed them`);
+      ready = true;
+      onReady();
+    }
+  }, 2000);
 }
 
 function startOnJobsPage() {
@@ -713,7 +724,7 @@ function startOnJobsPage() {
   new Promise((resolve) => observeCards(resolve))
     .then(() => markPage())
     .then(() => recordCurrentJob())
-    .catch((e) => console.error('Failed to start jobs page handling:', e));
+    .catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to start jobs page handling:`, e));
 }
 
 function watchUrlChanges() {
@@ -752,17 +763,17 @@ function watchUrlChanges() {
       const jobId = refreshPageAdapter().getCurrentJobId();
       if (isJobs && jobId && jobId !== lastJobId) {
         lastJobId = jobId;
-        recordCurrentJob().catch((e) => console.error('Failed to record current job after URL change:', e));
+        recordCurrentJob().catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to record current job after URL change:`, e));
       }
     } catch (e) {
-      console.error('Failed to process URL change:', e);
+      console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to process URL change:`, e);
     }
   }
 }
 
 getOptions()
   .then((opts) => applyColourSettings(opts.colours))
-  .catch((e) => console.error('Failed to load initial options:', e));
+  .catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to load initial options:`, e));
 
 watchUrlChanges();
 if (location.pathname.startsWith('/jobs/')) startOnJobsPage();

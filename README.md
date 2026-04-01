@@ -163,3 +163,6 @@ Current manifest version: `1.1.50`
 - Runtime behaviour on live LinkedIn pages still depends on LinkedIn’s DOM structure
 - Ageing support currently covers the classic LinkedIn jobs surface and the AI-generated `/jobs/search-results/` surface; relative-age matching still depends on English text such as `2 weeks ago`
 - The durable project notes still contain one open documentation question around the precise definition of `viewed`
+
+> [!NOTE]
+> Job lists opened from email links (such as job alert emails) are snapshots generated at send time. The relative age text shown on each card (e.g. `1 day ago`) reflects the time of generation, not the time of viewing. If you open such a link a day or more after the email was sent, the displayed age will be behind the actual calendar date. For example, a card showing `1 day ago` may have a `datetime` attribute of two days prior, causing the ageing mark to appear earlier than expected.

@@ -1,4 +1,6 @@
-importScripts('src/js/constants.js');
+importScripts('js/utils.js');
+importScripts('js/settings.js');
+importScripts('js/log.js');
 
 const MENU_BLACKLIST_TOGGLE = 'blacklist-toggle';
 const MENU_MARKER_TOGGLE = 'marker-toggle';
