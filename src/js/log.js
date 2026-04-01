@@ -12,9 +12,14 @@ console.debug = function consoleDebug(...args) {
   originalDebug(...args);
 };
 
-function setDebugFlag(enabled) {
-  console.debug(`Debugging is now ${enabled ? 'ON' : 'OFF'}.`);
-  debugEnabled = enabled;
+function setDebugFlag(enabled, { silent = false } = {}) {
+  const nextValue = !!enabled;
+  const changed = nextValue !== debugEnabled;
+  debugEnabled = nextValue;
+
+  if (!silent && changed) {
+    originalDebug(`${getLogPrefix('debug')} - [${getLineNumber()}] - Debugging is now ${nextValue ? 'ON' : 'OFF'}.`);
+  }
 }
 
 async function toggleDebug(enabled) {
@@ -32,7 +37,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'sync' && changes[SETTINGS_KEY]) {
     const newOptions = changes[SETTINGS_KEY].newValue;
     if (newOptions?.debug !== undefined) {
-      debugEnabled = newOptions.debug;
+      setDebugFlag(newOptions.debug);
     }
   }
 });
@@ -47,7 +52,7 @@ async function init_log(timeout) {
     return;
   }
   const options = await getOptions();
-  setDebugFlag(options?.debug ?? false);
+  setDebugFlag(options?.debug ?? false, { silent: true });
 }
 
 init_log(Date.now() + 120000);

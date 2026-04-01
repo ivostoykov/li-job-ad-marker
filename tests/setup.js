@@ -1,6 +1,104 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
+const indexedDbDatabases = new Map();
+
+function cloneValue(value) {
+  return value === undefined ? value : JSON.parse(JSON.stringify(value));
+}
+
+function createIdbRequest(executor) {
+  const request = {
+    onsuccess: null,
+    onerror: null,
+    onupgradeneeded: null,
+    result: undefined,
+    error: null,
+  };
+
+  setTimeout(() => executor(request), 0);
+  return request;
+}
+
+function createDatabase(name, version) {
+  const stores = new Map();
+
+  return {
+    name,
+    version,
+    objectStoreNames: {
+      contains(storeName) {
+        return stores.has(storeName);
+      },
+    },
+    createObjectStore(storeName, { keyPath } = {}) {
+      if (!stores.has(storeName)) {
+        stores.set(storeName, { keyPath, records: new Map() });
+      }
+      return {};
+    },
+    transaction(storeName) {
+      const store = stores.get(storeName);
+      if (!store) throw new Error(`Object store "${storeName}" does not exist`);
+
+      return {
+        objectStore() {
+          return {
+            get(key) {
+              return createIdbRequest((request) => {
+                request.result = cloneValue(store.records.get(key));
+                request.onsuccess?.({ target: request });
+              });
+            },
+            put(value) {
+              return createIdbRequest((request) => {
+                const key = store.keyPath ? value[store.keyPath] : value.id;
+                store.records.set(key, cloneValue(value));
+                request.result = key;
+                request.onsuccess?.({ target: request });
+              });
+            },
+            getAll() {
+              return createIdbRequest((request) => {
+                request.result = [...store.records.values()].map(cloneValue);
+                request.onsuccess?.({ target: request });
+              });
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+globalThis.indexedDB = {
+  open(name, version) {
+    return createIdbRequest((request) => {
+      let db = indexedDbDatabases.get(name);
+      const isNewDatabase = !db;
+
+      if (!db) {
+        db = createDatabase(name, version);
+        indexedDbDatabases.set(name, db);
+      }
+
+      if (isNewDatabase) {
+        request.onupgradeneeded?.({ target: { result: db } });
+      }
+
+      request.result = db;
+      request.onsuccess?.({ target: request });
+    });
+  },
+  deleteDatabase(name) {
+    indexedDbDatabases.delete(name);
+    return createIdbRequest((request) => {
+      request.result = undefined;
+      request.onsuccess?.({ target: request });
+    });
+  },
+};
+
 // Chrome API mock — must be set before any source script is evaluated
 globalThis.chrome = {
   runtime: {
@@ -47,6 +145,12 @@ const combined =
     TYPE_RANK,
     SETTINGS_DEFAULTS,
     PAGE_ADAPTERS,
+    getMatchedPageAdapter: () => getMatchedPageAdapter(),
+    getObservedSurface: () => getObservedSurface(),
+    getObserverSnapshot: () => ({ cardObserver, observedSurface }),
+    stopObservingCards: () => stopObservingCards(),
+    applyStartupOptions: (options) => applyStartupOptions(options),
+    isDebugEnabled: () => debugEnabled,
   };`;
 
 // Indirect eval → runs as a non-strict global Script so that function
