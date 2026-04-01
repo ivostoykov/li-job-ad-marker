@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.1.55] - 2026-04-01
+## [1.1.56] - 2026-04-01
 
 ### Changed
 - Content-script observation now keeps one active observer per injected LinkedIn page context and only rebuilds it when the matched adapter or observed root changes
