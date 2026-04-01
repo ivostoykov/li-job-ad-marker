@@ -322,8 +322,12 @@ function extractCurrentJobIdFromHref(href) {
 
 let currentPageAdapter = defaultJobsAdapter;
 
+function getMatchedPageAdapter() {
+  return PAGE_ADAPTERS.find((adapter) => adapter.matches()) || null;
+}
+
 function selectPageAdapter() {
-  return PAGE_ADAPTERS.find((adapter) => adapter.matches()) || defaultJobsAdapter;
+  return getMatchedPageAdapter() || defaultJobsAdapter;
 }
 
 function refreshPageAdapter() {
@@ -434,6 +438,13 @@ function applyColourSettings(colours) {
     --ljm-blacklisted-bg: ${hexToRgba(colours.blacklisted, 0.15)};
   }`;
   console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} -  - colours applied`, colours);
+}
+
+function applyStartupOptions(options) {
+  if (options?.colours) applyColourSettings(options.colours);
+  if (typeof setDebugFlag === 'function') {
+    setDebugFlag(options?.debug ?? false, { silent: true });
+  }
 }
 
 function parseUnwantedTitleWords(str) {
@@ -657,52 +668,93 @@ addMessageRequest('import-jobs', async (message) => {
 });
 
 let cardObserver = null;
+let cardObserverDebounceTimer = null;
+let cardObserverFallbackTimer = null;
+let observedSurface = null;
 
-function hasReadyJobCards() {
-  return refreshPageAdapter().hasReadyJobCards();
+function getObservedSurface() {
+  const adapter = getMatchedPageAdapter();
+  if (!adapter) return null;
+
+  return {
+    adapter,
+    root: adapter.getListRoot?.() || document.body
+  };
 }
 
-function nodeIsRelevant(node) {
+function clearObserverTimers() {
+  clearTimeout(cardObserverDebounceTimer);
+  clearTimeout(cardObserverFallbackTimer);
+  cardObserverDebounceTimer = null;
+  cardObserverFallbackTimer = null;
+}
+
+function stopObservingCards() {
+  clearObserverTimers();
+  if (cardObserver) {
+    cardObserver.disconnect();
+    cardObserver = null;
+  }
+  observedSurface = null;
+}
+
+function hasReadyJobCards(adapter = refreshPageAdapter()) {
+  return adapter.hasReadyJobCards();
+}
+
+function nodeIsRelevant(node, adapter = refreshPageAdapter()) {
   const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   if (!el) return false;
-  return refreshPageAdapter().isRelevantElement(el);
+  return adapter.isRelevantElement(el);
 }
 
-function isMutationRelevant(mutationList) {
+function isMutationRelevant(mutationList, adapter = refreshPageAdapter()) {
   return mutationList.some((mutation) => {
-    if (nodeIsRelevant(mutation.target)) return true;
-    return [...mutation.addedNodes].some(nodeIsRelevant);
+    if (nodeIsRelevant(mutation.target, adapter)) return true;
+    return [...mutation.addedNodes].some((node) => nodeIsRelevant(node, adapter));
   });
 }
 
-function observeCards(onReady) {
-  if (cardObserver) cardObserver.disconnect();
+function observeCards() {
+  const surface = getObservedSurface();
+  if (!surface) {
+    stopObservingCards();
+    return false;
+  }
 
-  let debounceTimer = null;
-  let ready = hasReadyJobCards();
+  const surfaceChanged = (
+    !cardObserver ||
+    observedSurface?.adapter.name !== surface.adapter.name ||
+    observedSurface?.root !== surface.root
+  );
 
-  if (ready) onReady();
+  if (!surfaceChanged) return true;
+
+  stopObservingCards();
+  observedSurface = surface;
 
   cardObserver = new MutationObserver((mutationList) => {
-    if (!isMutationRelevant(mutationList)) return;
+    const activeSurface = getObservedSurface();
+    if (
+      !activeSurface ||
+      activeSurface.adapter.name !== observedSurface?.adapter.name ||
+      activeSurface.root !== observedSurface?.root
+    ) {
+      return;
+    }
+    if (!isMutationRelevant(mutationList, activeSurface.adapter)) return;
 
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(async () => {
+    clearTimeout(cardObserverDebounceTimer);
+    cardObserverDebounceTimer = setTimeout(async () => {
       try {
         await markPage();
-
-        if (!ready && hasReadyJobCards()) {
-          ready = true;
-          console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - cards ready for adapter "${refreshPageAdapter().name}"`);
-          onReady();
-        }
       } catch (e) {
         console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to process card mutations:`, e);
       }
     }, 300);
   });
 
-  cardObserver.observe(document.body, {
+  cardObserver.observe(surface.root, {
     childList: true,
     subtree: true,
     characterData: true,
@@ -710,25 +762,45 @@ function observeCards(onReady) {
     attributeFilter: ['href', 'data-job-id', 'data-occludable-job-id']
   });
 
-  setTimeout(() => {
-    if (!ready && hasReadyJobCards()) {
-      console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - fallback: cards present but observer missed them`);
-      ready = true;
-      onReady();
+  if (hasReadyJobCards(surface.adapter)) {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - cards ready for adapter "${surface.adapter.name}"`);
+  }
+
+  cardObserverFallbackTimer = setTimeout(() => {
+    const activeSurface = getObservedSurface();
+    if (
+      !activeSurface ||
+      activeSurface.adapter.name !== observedSurface?.adapter.name ||
+      activeSurface.root !== observedSurface?.root
+    ) {
+      return;
     }
+
+    Promise.resolve()
+      .then(() => {
+        if (hasReadyJobCards(activeSurface.adapter)) {
+          console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - fallback: cards present for adapter "${activeSurface.adapter.name}"`);
+        }
+        return markPage();
+      })
+      .catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to run fallback mark pass:`, e));
   }, 2000);
+
+  return true;
 }
 
 function startOnJobsPage() {
+  if (!observeCards()) return;
+
   refreshPageAdapter();
-  new Promise((resolve) => observeCards(resolve))
+  Promise.resolve()
     .then(() => markPage())
     .then(() => recordCurrentJob())
     .catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to start jobs page handling:`, e));
 }
 
 function watchUrlChanges() {
-  let lastJobId = refreshPageAdapter().getCurrentJobId();
+  let lastJobId = getMatchedPageAdapter()?.getCurrentJobId?.() || null;
   let lastPath = location.pathname;
   let lastSearch = location.search;
 
@@ -749,21 +821,34 @@ function watchUrlChanges() {
 
   function onUrlChange() {
     try {
-      const isJobs = location.pathname.startsWith('/jobs/');
       const pathChanged = location.pathname !== lastPath;
       const searchChanged = location.search !== lastSearch;
       lastPath = location.pathname;
       lastSearch = location.search;
 
-      if (isJobs && (pathChanged || searchChanged)) {
-        refreshPageAdapter();
-        startOnJobsPage();
+      if (pathChanged || searchChanged) {
+        const matchedAdapter = getMatchedPageAdapter();
+        const nextRoot = matchedAdapter?.getListRoot?.() || (matchedAdapter ? document.body : null);
+        const surfaceChanged = (
+          matchedAdapter?.name !== observedSurface?.adapter.name ||
+          nextRoot !== observedSurface?.root
+        );
+
+        if (matchedAdapter && surfaceChanged) {
+          refreshPageAdapter();
+          startOnJobsPage();
+        } else if (!matchedAdapter) {
+          stopObservingCards();
+        }
       }
 
-      const jobId = refreshPageAdapter().getCurrentJobId();
-      if (isJobs && jobId && jobId !== lastJobId) {
+      const activeAdapter = getMatchedPageAdapter();
+      const jobId = activeAdapter?.getCurrentJobId?.() || null;
+      if (jobId && jobId !== lastJobId) {
         lastJobId = jobId;
         recordCurrentJob().catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to record current job after URL change:`, e));
+      } else if (!jobId) {
+        lastJobId = null;
       }
     } catch (e) {
       console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to process URL change:`, e);
@@ -771,9 +856,16 @@ function watchUrlChanges() {
   }
 }
 
-getOptions()
-  .then((opts) => applyColourSettings(opts.colours))
-  .catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to load initial options:`, e));
+async function initialiseContentScript() {
+  try {
+    const options = await getOptions();
+    applyStartupOptions(options);
+  } catch (e) {
+    console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to load initial options:`, e);
+  }
 
-watchUrlChanges();
-if (location.pathname.startsWith('/jobs/')) startOnJobsPage();
+  watchUrlChanges();
+  if (getObservedSurface()) startOnJobsPage();
+}
+
+initialiseContentScript();

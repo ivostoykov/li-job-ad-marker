@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.55] - 2026-04-01
+
+### Changed
+- Content-script observation now keeps one active observer per injected LinkedIn page context and only rebuilds it when the matched adapter or observed root changes
+- Jobs-surface startup now runs an immediate first marking pass before relying on later DOM mutations
+- Content-script startup now applies stored colour and debug settings before the first jobs-surface handling begins
+
+### Fixed
+- Notification-to-jobs SPA navigation no longer drops the initial marking pass when LinkedIn issues rapid `pushState` and `replaceState` updates
+- Query-string-only changes such as `currentJobId` no longer restart jobs-page handling or tear down the active card observer
+- Debug logging now initialises consistently at startup instead of missing the first pass while the async log bootstrap catches up
+
 ## [1.1.52] - 2026-03-31
 
 ### Added
