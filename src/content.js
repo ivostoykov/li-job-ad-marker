@@ -311,7 +311,10 @@ const companySearchAdapter = {
 const PAGE_ADAPTERS = [aiSearchAdapter, companySearchAdapter, defaultJobsAdapter];
 
 function extractCurrentJobIdFromHref(href) {
-  if (!href) return null;
+  if (!href) {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - ${extractCurrentJobIdFromHref.name}'s param "href" is missing or empty`, href);
+    return null;
+  }
 
   try {
     return new URL(href, location.origin).searchParams.get('currentJobId');
@@ -332,15 +335,15 @@ function selectPageAdapter() {
 
 function refreshPageAdapter() {
   const nextAdapter = selectPageAdapter();
-  if (currentPageAdapter.name !== nextAdapter.name) {
-    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Using page adapter "${nextAdapter.name}"`);
-  }
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - refreshing Adapter`, {nextAdapter: nextAdapter?.name, currentPageAdapter: currentPageAdapter.name});
+
   currentPageAdapter = nextAdapter;
   return currentPageAdapter;
 }
 
 function findCardFromNodes(nodes) {
   const adapter = refreshPageAdapter();
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Will use this Adapter`, {adapter: currentPageAdapter.name});
 
   for (const node of nodes) {
     if (!isElement(node)) continue;
@@ -348,17 +351,19 @@ function findCardFromNodes(nodes) {
     if (card) return card;
   }
 
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - No cards found.`);
   return null;
 }
 
 function getContextCard(action) {
   if (lastRightClickedCard) return lastRightClickedCard;
-  console.warn(`${getLogPrefix(console.warn.name)} - ${getLineNumber()} - ${action}: no job card captured from context menu`);
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - ${action}: no job card captured from context menu`);
   return null;
 }
 
 function addMessageAction(action, handler) {
   chrome.runtime.onMessage.addListener((message) => {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Received message`, {action, message});
     if (message.action !== action) return;
 
     Promise.resolve()
@@ -369,6 +374,7 @@ function addMessageAction(action, handler) {
 
 function addMessageRequest(action, handler) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Received message`, {action, message});
     if (message.action !== action) return;
 
     Promise.resolve()
@@ -437,7 +443,7 @@ function applyColourSettings(colours) {
     --ljm-blacklisted-colour: ${colours.blacklisted};
     --ljm-blacklisted-bg: ${hexToRgba(colours.blacklisted, 0.15)};
   }`;
-  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} -  - colours applied`, colours);
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - colours applied`, colours);
 }
 
 function applyStartupOptions(options) {
@@ -535,11 +541,13 @@ async function markDetailPanelUnwantedTitle() {
 }
 
 async function markPage() {
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - ${markPage.name} fired.`);
   await Promise.all([markCards(), markDetailPanelAging(), markDetailPanelUnwantedTitle()]);
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'sync' || !changes[SETTINGS_KEY]) return;
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Options changed.`, {changes, areaName});
 
   Promise.resolve()
     .then(() => {
@@ -551,7 +559,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 async function markCards() {
-  if (!enabled) return;
+  if (!enabled) {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Temporarily disabled.`);
+    return;
+  }
+
   const adapter = refreshPageAdapter();
   console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - markCards() with adapter "${adapter.name}"`);
 
@@ -692,6 +704,7 @@ function clearObserverTimers() {
 function stopObservingCards() {
   clearObserverTimers();
   if (cardObserver) {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Disconnecting observer.`);
     cardObserver.disconnect();
     cardObserver = null;
   }
@@ -699,7 +712,10 @@ function stopObservingCards() {
 }
 
 function hasReadyJobCards(adapter = refreshPageAdapter()) {
-  return adapter.hasReadyJobCards();
+  const res = adapter.hasReadyJobCards();
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Has ready cards`, {adapter: adapter?.name, res});
+
+  return res;
 }
 
 function nodeIsRelevant(node, adapter = refreshPageAdapter()) {
@@ -718,6 +734,7 @@ function isMutationRelevant(mutationList, adapter = refreshPageAdapter()) {
 function observeCards() {
   const surface = getObservedSurface();
   if (!surface) {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Stopping observer. No surface.`, {surface});
     stopObservingCards();
     return false;
   }
@@ -754,6 +771,7 @@ function observeCards() {
     }, 300);
   });
 
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Starting observer.`, {surface});
   cardObserver.observe(surface.root, {
     childList: true,
     subtree: true,
@@ -761,10 +779,6 @@ function observeCards() {
     attributes: true,
     attributeFilter: ['href', 'data-job-id', 'data-occludable-job-id']
   });
-
-  if (hasReadyJobCards(surface.adapter)) {
-    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - cards ready for adapter "${surface.adapter.name}"`);
-  }
 
   cardObserverFallbackTimer = setTimeout(() => {
     const activeSurface = getObservedSurface();
@@ -823,11 +837,13 @@ function watchUrlChanges() {
     try {
       const pathChanged = location.pathname !== lastPath;
       const searchChanged = location.search !== lastSearch;
+      console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - ${onUrlChange.name} fired`, {location: location.href, pathChanged, searchChanged, lastPath, lastSearch});
       lastPath = location.pathname;
       lastSearch = location.search;
 
       if (pathChanged || searchChanged) {
         const matchedAdapter = getMatchedPageAdapter();
+        console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Matching Adapter: ${matchedAdapter?.name}`);
         const nextRoot = matchedAdapter?.getListRoot?.() || (matchedAdapter ? document.body : null);
         const surfaceChanged = (
           matchedAdapter?.name !== observedSurface?.adapter.name ||
@@ -835,9 +851,11 @@ function watchUrlChanges() {
         );
 
         if (matchedAdapter && surfaceChanged) {
+          console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - matchedAdapter and surface changed`, {matchedAdapter, surfaceChanged});
           refreshPageAdapter();
           startOnJobsPage();
         } else if (!matchedAdapter) {
+          console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - No Matching Adapter.`);
           stopObservingCards();
         }
       }
@@ -859,6 +877,7 @@ function watchUrlChanges() {
 async function initialiseContentScript() {
   try {
     const options = await getOptions();
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - options`, options);
     applyStartupOptions(options);
   } catch (e) {
     console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to load initial options:`, e);
