@@ -1,4 +1,5 @@
 let enabled = true;
+let hasInitialised = false;
 
 const JOB_LINK_RE = /\/jobs\/view\/(\d+)/;
 const JOB_CARD_SELECTOR = '.job-card-container';
@@ -7,6 +8,7 @@ const JOB_CARD_WRAPPER_SELECTOR = 'li[data-occludable-job-id]';
 const JOB_DETAIL_PANEL_SELECTOR = '.job-details-jobs-unified-top-card__tertiary-description-container';
 const AI_SEARCH_ROOT_SELECTOR = 'main div[componentkey="SearchResultsMainContent"]';
 const AI_SEARCH_CARD_SELECTOR = 'div[role="button"][componentkey], a[componentkey][href*="currentJobId="]';
+const BOOTSTRAP_TIMEOUT_MS = 10000;
 
 function getSearchParam(key) {
   const params = new URLSearchParams(location.search);
@@ -103,13 +105,27 @@ function extractJobId(anchor) {
   return match ? match[1] : null;
 }
 
+function extractJobIdFromPathname(pathname = location.pathname) {
+  const match = String(pathname ?? '').match(JOB_LINK_RE);
+  return match ? match[1] : null;
+}
+
 const defaultJobsAdapter = {
-  name: 'default-jobs',
-  matches() {
-    return location.pathname.startsWith('/jobs/');
+  name: 'classic-search',
+  matchesLocation() {
+    const matches = (
+      location.pathname === '/jobs/search/' &&
+      !aiSearchAdapter.matchesLocation() &&
+      !companySearchAdapter.matchesLocation()
+    );
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - defaultJobsAdapter.matchesLocation`, { location: location.pathname, matches });
+    return matches;
   },
   getJobCards() {
     return document.querySelectorAll(JOB_CARD_SELECTOR);
+  },
+  getObservationRoot() {
+    return document.body;
   },
   getCardFromElement(el) {
     if (!isElement(el)) return null;
@@ -175,14 +191,16 @@ const defaultJobsAdapter = {
 const aiSearchAdapter = {
   ...defaultJobsAdapter,
   name: 'ai-search-results',
-  matches() {
-    return (
-      location.pathname === '/jobs/search-results/' &&
-      !!this.getListRoot()
-    );
+  matchesLocation() {
+    const matches = location.pathname === '/jobs/search-results/';
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - aiSearchAdapter.matchesLocation`, { location: location.pathname, matches });
+    return matches;
   },
   getListRoot() {
     return document.querySelector(AI_SEARCH_ROOT_SELECTOR);
+  },
+  getObservationRoot() {
+    return this.getListRoot();
   },
   getJobCards() {
     const root = this.getListRoot();
@@ -275,11 +293,13 @@ const aiSearchAdapter = {
 const companySearchAdapter = {
   ...defaultJobsAdapter,
   name: 'company-search',
-  matches() {
-    return (
+  matchesLocation() {
+    const matches = (
       location.pathname === '/jobs/search/' &&
       getSearchParam('origin') === 'COMPANY_PAGE_JOBS_CLUSTER_EXPANSION'
     );
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - companySearchAdapter.matchesLocation`, { location: location.pathname, matches });
+    return matches;
   },
   getCardFromElement(el) {
     if (!isElement(el)) return null;
@@ -308,7 +328,20 @@ const companySearchAdapter = {
   }
 };
 
-const PAGE_ADAPTERS = [aiSearchAdapter, companySearchAdapter, defaultJobsAdapter];
+const jobViewAdapter = {
+  ...defaultJobsAdapter,
+  name: 'job-view',
+  matchesLocation() {
+    const matches = !!extractJobIdFromPathname(location.pathname);
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - jobViewAdapter.matchesLocation`, { location: location.pathname, matches });
+    return matches;
+  },
+  getCurrentJobId() {
+    return extractJobIdFromPathname(location.pathname);
+  }
+};
+
+const PAGE_ADAPTERS = [aiSearchAdapter, companySearchAdapter, jobViewAdapter, defaultJobsAdapter];
 
 function extractCurrentJobIdFromHref(href) {
   if (!href) {
@@ -326,24 +359,32 @@ function extractCurrentJobIdFromHref(href) {
 let currentPageAdapter = defaultJobsAdapter;
 
 function getMatchedPageAdapter() {
-  return PAGE_ADAPTERS.find((adapter) => adapter.matches()) || null;
-}
-
-function selectPageAdapter() {
-  return getMatchedPageAdapter() || defaultJobsAdapter;
+  switch (location.pathname) {
+    case '/jobs/search-results/':
+      return aiSearchAdapter;
+    case '/jobs/search/':
+      return getSearchParam('origin') === 'COMPANY_PAGE_JOBS_CLUSTER_EXPANSION'
+        ? companySearchAdapter
+        : defaultJobsAdapter;
+    default:
+      return extractJobIdFromPathname(location.pathname)
+        ? jobViewAdapter
+        : null;
+  }
 }
 
 function refreshPageAdapter() {
-  const nextAdapter = selectPageAdapter();
-  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - refreshing Adapter`, {nextAdapter: nextAdapter?.name, currentPageAdapter: currentPageAdapter.name});
-
-  currentPageAdapter = nextAdapter;
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - refreshing Adapter`, {
+    nextAdapter: currentPageAdapter?.name ?? null,
+    currentPageAdapter: currentPageAdapter?.name ?? null
+  });
   return currentPageAdapter;
 }
 
 function findCardFromNodes(nodes) {
-  const adapter = refreshPageAdapter();
-  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Will use this Adapter`, {adapter: currentPageAdapter.name});
+  const adapter = currentPageAdapter;
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Will use this Adapter`, {adapter: currentPageAdapter?.name ?? null});
+  if (!adapter) return null;
 
   for (const node of nodes) {
     if (!isElement(node)) continue;
@@ -542,7 +583,18 @@ async function markDetailPanelUnwantedTitle() {
 
 async function markPage() {
   console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - ${markPage.name} fired.`);
-  await Promise.all([markCards(), markDetailPanelAging(), markDetailPanelUnwantedTitle()]);
+  const tasks = [
+    { name: markCards.name, run: () => markCards() },
+    { name: markDetailPanelAging.name, run: () => markDetailPanelAging() },
+    { name: markDetailPanelUnwantedTitle.name, run: () => markDetailPanelUnwantedTitle() }
+  ];
+
+  const results = await Promise.allSettled(tasks.map((task) => task.run()));
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - markPage task failed: ${tasks[index].name}`, result.reason);
+    }
+  });
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -575,7 +627,9 @@ async function markCards() {
 
   const saves = [];
 
-  adapter.getJobCards().forEach((card) => {
+  const jobCards = adapter.getJobCards();
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Adapter "${adapter.name}" found ${jobCards} numbers of Job Cards.`);
+  jobCards.forEach((card) => {
     const jobId = adapter.getJobId(card);
     const company = adapter.getCompanyName(card);
     const existing = jobId ? jobMap[jobId] : null;
@@ -681,24 +735,28 @@ addMessageRequest('import-jobs', async (message) => {
 
 let cardObserver = null;
 let cardObserverDebounceTimer = null;
-let cardObserverFallbackTimer = null;
 let observedSurface = null;
+let bootstrapObserver = null;
+let bootstrapTimeoutTimer = null;
 
 function getObservedSurface() {
-  const adapter = getMatchedPageAdapter();
+  const adapter = currentPageAdapter;
   if (!adapter) return null;
+
+  const root = adapter.getObservationRoot
+    ? adapter.getObservationRoot()
+    : document.body;
+  if (!root) return null;
 
   return {
     adapter,
-    root: adapter.getListRoot?.() || document.body
+    root
   };
 }
 
 function clearObserverTimers() {
   clearTimeout(cardObserverDebounceTimer);
-  clearTimeout(cardObserverFallbackTimer);
   cardObserverDebounceTimer = null;
-  cardObserverFallbackTimer = null;
 }
 
 function stopObservingCards() {
@@ -711,30 +769,44 @@ function stopObservingCards() {
   observedSurface = null;
 }
 
-function hasReadyJobCards(adapter = refreshPageAdapter()) {
+function stopBootstrapObserver() {
+  clearTimeout(bootstrapTimeoutTimer);
+  bootstrapTimeoutTimer = null;
+
+  if (bootstrapObserver) {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Disconnecting bootstrap observer.`);
+    bootstrapObserver.disconnect();
+    bootstrapObserver = null;
+  }
+}
+
+function hasReadyJobCards(adapter = currentPageAdapter) {
+  if (!adapter) return false;
   const res = adapter.hasReadyJobCards();
   console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Has ready cards`, {adapter: adapter?.name, res});
 
   return res;
 }
 
-function nodeIsRelevant(node, adapter = refreshPageAdapter()) {
+function nodeIsRelevant(node, adapter = currentPageAdapter) {
+  if (!adapter) return false;
   const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   if (!el) return false;
   return adapter.isRelevantElement(el);
 }
 
-function isMutationRelevant(mutationList, adapter = refreshPageAdapter()) {
+function isMutationRelevant(mutationList, adapter = currentPageAdapter) {
+  if (!adapter) return false;
   return mutationList.some((mutation) => {
     if (nodeIsRelevant(mutation.target, adapter)) return true;
     return [...mutation.addedNodes].some((node) => nodeIsRelevant(node, adapter));
   });
 }
 
-function observeCards() {
+function observeCards(trigger = 'unknown') {
   const surface = getObservedSurface();
   if (!surface) {
-    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Stopping observer. No surface.`, {surface});
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Stopping observer. No surface.`, { surface, trigger });
     stopObservingCards();
     return false;
   }
@@ -751,12 +823,21 @@ function observeCards() {
   observedSurface = surface;
 
   cardObserver = new MutationObserver((mutationList) => {
+    currentPageAdapter = getMatchedPageAdapter() || currentPageAdapter;
     const activeSurface = getObservedSurface();
     if (
       !activeSurface ||
       activeSurface.adapter.name !== observedSurface?.adapter.name ||
       activeSurface.root !== observedSurface?.root
     ) {
+      console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Observed surface changed. Rebinding.`, {
+        trigger,
+        observedAdapter: observedSurface?.adapter.name,
+        activeAdapter: activeSurface?.adapter.name,
+        hasActiveSurface: !!activeSurface
+      });
+      stopObservingCards();
+      beginPageHandling('mutation-surface-change');
       return;
     }
     if (!isMutationRelevant(mutationList, activeSurface.adapter)) return;
@@ -780,41 +861,90 @@ function observeCards() {
     attributeFilter: ['href', 'data-job-id', 'data-occludable-job-id']
   });
 
-  cardObserverFallbackTimer = setTimeout(() => {
-    const activeSurface = getObservedSurface();
-    if (
-      !activeSurface ||
-      activeSurface.adapter.name !== observedSurface?.adapter.name ||
-      activeSurface.root !== observedSurface?.root
-    ) {
-      return;
-    }
-
-    Promise.resolve()
-      .then(() => {
-        if (hasReadyJobCards(activeSurface.adapter)) {
-          console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - fallback: cards present for adapter "${activeSurface.adapter.name}"`);
-        }
-        return markPage();
-      })
-      .catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to run fallback mark pass:`, e));
-  }, 2000);
-
   return true;
 }
 
-function startOnJobsPage() {
-  if (!observeCards()) return;
+function startOnJobsPage(trigger = 'unknown') {
+  if (!observeCards(trigger)) return;
 
-  refreshPageAdapter();
+  const adapter = currentPageAdapter;
+  if (!adapter) return;
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Starting jobs-page handling.`, {
+    trigger,
+    adapter: adapter.name,
+    location: location.pathname,
+    readyCards: hasReadyJobCards(adapter)
+  });
   Promise.resolve()
     .then(() => markPage())
     .then(() => recordCurrentJob())
     .catch((e) => console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to start jobs page handling:`, e));
 }
 
+function beginPageHandling(trigger = 'unknown') {
+  if (trigger !== 'initial-load') {
+    currentPageAdapter = getMatchedPageAdapter() || currentPageAdapter;
+  }
+
+  const matchedAdapter = currentPageAdapter;
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - beginPageHandling`, {
+    trigger,
+    matchedAdapter: matchedAdapter?.name ?? null,
+    location: location.pathname
+  });
+
+  if (!matchedAdapter) {
+    stopBootstrapObserver();
+    stopObservingCards();
+    return false;
+  }
+
+  const surface = getObservedSurface();
+  if (surface) {
+    stopBootstrapObserver();
+    startOnJobsPage(trigger);
+    return true;
+  }
+
+  stopObservingCards();
+  stopBootstrapObserver();
+
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Waiting for adapter readiness.`, {
+    trigger,
+    adapter: matchedAdapter.name,
+    location: location.pathname
+  });
+  bootstrapObserver = new MutationObserver(() => {
+    const activeAdapter = currentPageAdapter;
+    if (!activeAdapter || activeAdapter.name !== matchedAdapter.name) return;
+
+    const activeSurface = getObservedSurface();
+    if (!activeSurface) return;
+
+    stopBootstrapObserver();
+    startOnJobsPage(trigger);
+  });
+
+  bootstrapObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  bootstrapTimeoutTimer = setTimeout(() => {
+    stopBootstrapObserver();
+    stopObservingCards();
+    console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Adapter did not become ready in time.`, {
+      trigger,
+      adapter: matchedAdapter.name,
+      location: location.pathname
+    });
+  }, BOOTSTRAP_TIMEOUT_MS);
+
+  return true;
+}
+
 function watchUrlChanges() {
-  let lastJobId = getMatchedPageAdapter()?.getCurrentJobId?.() || null;
+  let lastJobId = currentPageAdapter?.getCurrentJobId?.() || null;
   let lastPath = location.pathname;
   let lastSearch = location.search;
 
@@ -827,6 +957,13 @@ function watchUrlChanges() {
     const original = history[methodName].bind(history);
 
     history[methodName] = function (...args) {
+      console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - history.${methodName} called`, {
+        location: location.pathname,
+        argCount: args.length,
+        nextPathname: typeof args[2] === 'string'
+          ? new URL(args[2], location.origin).pathname
+          : null
+      });
       const result = original(...args);
       onUrlChange();
       return result;
@@ -837,30 +974,35 @@ function watchUrlChanges() {
     try {
       const pathChanged = location.pathname !== lastPath;
       const searchChanged = location.search !== lastSearch;
-      console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - ${onUrlChange.name} fired`, {location: location.href, pathChanged, searchChanged, lastPath, lastSearch});
+      console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - ${onUrlChange.name} fired`, {
+        location: location.pathname,
+        pathChanged,
+        searchChanged,
+        lastPath
+      });
       lastPath = location.pathname;
       lastSearch = location.search;
 
       if (pathChanged || searchChanged) {
-        const matchedAdapter = getMatchedPageAdapter();
-        console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Matching Adapter: ${matchedAdapter?.name}`);
-        const nextRoot = matchedAdapter?.getListRoot?.() || (matchedAdapter ? document.body : null);
+        currentPageAdapter = getMatchedPageAdapter();
+        const matchedAdapter = currentPageAdapter;
+        const nextSurface = getObservedSurface();
         const surfaceChanged = (
           matchedAdapter?.name !== observedSurface?.adapter.name ||
-          nextRoot !== observedSurface?.root
+          nextSurface?.root !== observedSurface?.root
         );
 
-        if (matchedAdapter && surfaceChanged) {
-          console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - matchedAdapter and surface changed`, {matchedAdapter, surfaceChanged});
-          refreshPageAdapter();
-          startOnJobsPage();
+        if (matchedAdapter && (!nextSurface || surfaceChanged || !!bootstrapObserver)) {
+          console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Handling matched adapter after URL change.`, { matchedAdapter: matchedAdapter.name, surfaceChanged, hasReadySurface: !!nextSurface });
+          beginPageHandling('url-change');
         } else if (!matchedAdapter) {
           console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - No Matching Adapter.`);
+          stopBootstrapObserver();
           stopObservingCards();
         }
       }
 
-      const activeAdapter = getMatchedPageAdapter();
+      const activeAdapter = currentPageAdapter;
       const jobId = activeAdapter?.getCurrentJobId?.() || null;
       if (jobId && jobId !== lastJobId) {
         lastJobId = jobId;
@@ -875,6 +1017,19 @@ function watchUrlChanges() {
 }
 
 async function initialiseContentScript() {
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - initial URL`, {
+    href: location.pathname,
+    pathname: location.pathname
+  });
+
+  if (!location.pathname.startsWith('/jobs/') && !location.pathname.startsWith('/company/')) {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Initial load ignored. Irrelevant URL.`, {
+      href: location.pathname,
+      pathname: location.pathname
+    });
+    return;
+  }
+
   try {
     const options = await getOptions();
     console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - options`, options);
@@ -883,8 +1038,72 @@ async function initialiseContentScript() {
     console.error(`${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to load initial options:`, e);
   }
 
+  currentPageAdapter = getMatchedPageAdapter();
+  if (!currentPageAdapter) {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - No adapter selected from URL.`, {
+      href: location.pathname,
+      pathname: location.pathname
+    });
+    return;
+  }
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Adapter set from URL`, {
+    adapter: currentPageAdapter.name,
+    criterion: currentPageAdapter === aiSearchAdapter
+      ? 'pathname === /jobs/search-results/'
+      : currentPageAdapter === companySearchAdapter
+        ? 'pathname === /jobs/search/ && origin === COMPANY_PAGE_JOBS_CLUSTER_EXPANSION'
+        : currentPageAdapter === defaultJobsAdapter
+          ? 'pathname === /jobs/search/'
+          : 'pathname matches /jobs/view/<id>',
+    href: location.pathname
+  });
+
   watchUrlChanges();
-  if (getObservedSurface()) startOnJobsPage();
+  (function waitForBody() {
+    console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - body check`, {
+      href: location.pathname,
+      adapter: currentPageAdapter.name,
+      hasBody: !!document.body
+    });
+
+    if (document.body) {
+      console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Starting observer from initial load`, {
+        href: location.pathname,
+        adapter: currentPageAdapter.name
+      });
+      beginPageHandling('initial-load');
+      return;
+    }
+
+    setTimeout(waitForBody, 250);
+  })();
 }
 
-initialiseContentScript();
+document.addEventListener('DOMContentLoaded', async () => {
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - lifecycle:DOMContentLoaded`, {
+    location: location.pathname,
+    readyState: document.readyState,
+    visibilityState: document.visibilityState
+  });
+
+  if (hasInitialised) return;
+  hasInitialised = true;
+  await initialiseContentScript();
+}, { once: true });
+
+/*
+document.addEventListener('click', (event) => {
+  const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+  const clickedLink = path.find((node) => node instanceof HTMLAnchorElement)
+    || event.target?.closest?.('a')
+    || null;
+
+  console.debug(`${getLogPrefix(console.debug.name)} - ${getLineNumber()} - click`, {
+    location: location.pathname,
+    targetTag: event.target?.tagName ?? null,
+    targetText: event.target?.textContent?.trim()?.slice(0, 160) ?? null,
+    clickedLinkHref: clickedLink?.href ?? null,
+    clickedLinkText: clickedLink?.textContent?.trim()?.slice(0, 160) ?? null,
+  });
+}, true);
+*/

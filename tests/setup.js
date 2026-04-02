@@ -137,20 +137,45 @@ const combined =
   sourceFiles
     .map((f) => readFileSync(resolve(process.cwd(), f), 'utf-8'))
     .join('\n') +
+  `\nconst __testOriginalMarkPageTasks = {
+    markCards,
+    markDetailPanelAging,
+    markDetailPanelUnwantedTitle,
+  };` +
   // Expose const objects that tests need to reference directly
   `\nglobalThis._testExports = {
     defaultJobsAdapter,
     aiSearchAdapter,
     companySearchAdapter,
+    jobViewAdapter,
     TYPE_RANK,
     SETTINGS_DEFAULTS,
     PAGE_ADAPTERS,
     getMatchedPageAdapter: () => getMatchedPageAdapter(),
     getObservedSurface: () => getObservedSurface(),
-    getObserverSnapshot: () => ({ cardObserver, observedSurface }),
+    getObserverSnapshot: () => ({ cardObserver, observedSurface, bootstrapObserver }),
     stopObservingCards: () => stopObservingCards(),
+    stopBootstrapObserver: () => stopBootstrapObserver(),
     applyStartupOptions: (options) => applyStartupOptions(options),
+    beginPageHandling: () => beginPageHandling(),
     isDebugEnabled: () => debugEnabled,
+    markPage: () => markPage(),
+    setMarkPageTasks: (tasks = {}) => {
+      if (Object.prototype.hasOwnProperty.call(tasks, 'markCards')) {
+        markCards = tasks.markCards;
+      }
+      if (Object.prototype.hasOwnProperty.call(tasks, 'markDetailPanelAging')) {
+        markDetailPanelAging = tasks.markDetailPanelAging;
+      }
+      if (Object.prototype.hasOwnProperty.call(tasks, 'markDetailPanelUnwantedTitle')) {
+        markDetailPanelUnwantedTitle = tasks.markDetailPanelUnwantedTitle;
+      }
+    },
+    resetMarkPageTasks: () => {
+      markCards = __testOriginalMarkPageTasks.markCards;
+      markDetailPanelAging = __testOriginalMarkPageTasks.markDetailPanelAging;
+      markDetailPanelUnwantedTitle = __testOriginalMarkPageTasks.markDetailPanelUnwantedTitle;
+    },
   };`;
 
 // Indirect eval → runs as a non-strict global Script so that function

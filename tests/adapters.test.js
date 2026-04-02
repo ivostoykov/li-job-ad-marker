@@ -131,3 +131,22 @@ describe('defaultJobsAdapter — getCompanyElement', () => {
     expect(adapter.getCompanyElement(card)).toBe(subtitle);
   });
 });
+
+describe('route-based adapter matching', () => {
+  beforeEach(() => {
+    history.replaceState({}, '', '/');
+  });
+
+  it('matches classic search on /jobs/search/', () => {
+    history.replaceState({}, '', '/jobs/search/?currentJobId=123456');
+
+    expect(globalThis._testExports.getMatchedPageAdapter()?.name).toBe('classic-search');
+  });
+
+  it('matches the job-view adapter on /jobs/view/...', () => {
+    history.replaceState({}, '', '/jobs/view/123456/');
+
+    expect(globalThis._testExports.getMatchedPageAdapter()?.name).toBe('job-view');
+    expect(globalThis._testExports.jobViewAdapter.getCurrentJobId()).toBe('123456');
+  });
+});

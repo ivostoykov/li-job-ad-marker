@@ -26,7 +26,7 @@
         "src/content.js"
       ],
       "css": ["src/css/marker.css"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ]
 }
