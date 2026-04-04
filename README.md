@@ -110,10 +110,6 @@ Used for:
 
 This means settings and blacklist data can follow the signed-in browser profile, subject to Chrome sync behaviour.
 
-## Privacy
-
-All data stays in your browser. Nothing is sent to, shared with, or stored by any third party.
-
 ## Where It Runs
 
 The extension injects on:
@@ -124,25 +120,10 @@ It then activates its job-marking logic only when the current page is part of Li
 
 This broader match is intentional, because LinkedIn often moves into job pages through SPA navigation rather than a full page load.
 
-## How It Handles LinkedIn’s Dynamic UI
+## Privacy
 
-LinkedIn job lists are rendered asynchronously and can change without a traditional page refresh. The extension deals with that by:
+All data stays in your browser. Nothing is sent to, shared with, or stored by any third party.
 
-- waiting for job cards to appear after page load
-- watching the DOM for newly inserted or replaced cards
-- watching relevant job-details mutations for right-panel ageing updates
-- re-marking cards after SPA navigation into jobs pages
-- reapplying colour settings when synced options change
-
-The extension currently routes DOM-specific behaviour through page adapters so it can support multiple LinkedIn job surfaces without relying on one shared selector set.
-
-## Permissions
-
-The manifest currently requests:
-
-- `storage`: save jobs, blacklist entries, and options
-- `contextMenus`: add the LinkedIn page actions
-- `tabs`: allow the options page to talk to an open LinkedIn tab for export/import support
 
 > [!NOTE]
 > Job lists opened from email links (such as job alert emails) are snapshots generated at send time. The relative age text shown on each card (e.g. `1 day ago`) reflects the time of generation, **not the time of viewing**. If you open such a link a day or more after the email was sent, the displayed age will be behind the actual calendar date. For example, a card showing `1 day ago` may have a `datetime` attribute of two days prior, causing the ageing mark to appear earlier than expected.
