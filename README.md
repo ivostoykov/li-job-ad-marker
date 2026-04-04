@@ -10,7 +10,7 @@ LinkedIn Job Ad Marker is an extension available for Chrome and Firefox applied 
 The aim is simple: reduce repeat scanning. Instead of re-reading the same cards every time LinkedIn reshuffles, reloads, or promotes old listings again, the extension adds lightweight visual cues directly to the job list.
 
 - **Chrome**: https://chromewebstore.google.com/detail/linkedin-job-ad-marker/eaegndbkfnnkmcedmhpdiiombakchjbe
-- **FireFox**: **Active** Will be here: https://addons.mozilla.org/en-US/firefox/addon/linkedin-job-ad-marker/
+- **FireFox**: Will be here: https://addons.mozilla.org/en-US/firefox/addon/linkedin-job-ad-marker/
 
 ## What It Does
 
@@ -144,25 +144,5 @@ The manifest currently requests:
 - `contextMenus`: add the LinkedIn page actions
 - `tabs`: allow the options page to talk to an open LinkedIn tab for export/import support
 
-## Installation
-
-1. Open Chrome and go to `chrome://extensions/`
-2. Enable `Developer mode`
-3. Click `Load unpacked`
-4. Select the project root directory
-
-Do not load the `src/` directory on its own. Load the repository root, where `manifest.json` lives.
-
-## Current Version
-
-Current manifest version: `1.1.50`
-
-## Limitations
-
-- This is a Chrome extension, not a published cross-browser package
-- Runtime behaviour on live LinkedIn pages still depends on LinkedIn’s DOM structure
-- Ageing support currently covers the classic LinkedIn jobs surface and the AI-generated `/jobs/search-results/` surface; relative-age matching still depends on English text such as `2 weeks ago`
-- The durable project notes still contain one open documentation question around the precise definition of `viewed`
-
 > [!NOTE]
-> Job lists opened from email links (such as job alert emails) are snapshots generated at send time. The relative age text shown on each card (e.g. `1 day ago`) reflects the time of generation, not the time of viewing. If you open such a link a day or more after the email was sent, the displayed age will be behind the actual calendar date. For example, a card showing `1 day ago` may have a `datetime` attribute of two days prior, causing the ageing mark to appear earlier than expected.
+> Job lists opened from email links (such as job alert emails) are snapshots generated at send time. The relative age text shown on each card (e.g. `1 day ago`) reflects the time of generation, **not the time of viewing**. If you open such a link a day or more after the email was sent, the displayed age will be behind the actual calendar date. For example, a card showing `1 day ago` may have a `datetime` attribute of two days prior, causing the ageing mark to appear earlier than expected.

@@ -3,16 +3,16 @@
 ## [1.1.65] - 2026-04-04
 
 ### Added
-- `ljmDebugSnapshot()` page-console helper for quick surface diagnostics during LinkedIn regressions
+- page-console debug helper for quick surface diagnostics during LinkedIn regressions
 
 ### Changed
-- Jobs-surface detection now follows the visible DOM rather than trusting only the route, so `/jobs/search/`, `/jobs/search-results`, and `/preload/` can resolve to the correct classic or AI adapter at runtime
-- URL-change diagnostics now log the real SPA sequence, including page-context `pushState` and `replaceState` changes
+- Jobs-surface detection now follows the visible DOM rather than trusting only the route, so the path can resolve to the correct classic or AI adapter at runtime
+- URL-change diagnostics now log the real SPA sequence, including page-context changes
 
 ### Fixed
 - Classic and AI alert flows now stay marked after rapid LinkedIn SPA hops between notifications, AI search, and classic search
-- The visible jobs surface inside LinkedIn’s same-origin `/preload/` frame now receives the content script, stylesheet, and initial mark pass
-- AI-style result cards on `/jobs/search/` and `/jobs/search-results/` now resolve job IDs reliably through page-side annotations instead of missing most cards
+- The visible jobs surface inside LinkedIn’s same-origin frame now receives the content script, stylesheet, and initial mark pass
+- AI-style result cards on now resolve job IDs reliably through page-side annotations instead of missing most cards
 - Non-job footer and feedback rows on the AI search surface no longer inflate card counts or produce false missing-ID diagnostics
 
 ## [1.1.56] - 2026-04-01
