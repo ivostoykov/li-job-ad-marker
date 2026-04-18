@@ -3,7 +3,7 @@
 ## [1.1.70] - 2026-04-18
 
 ### Added
-- Viewed job cards now show the date and time first viewed as a hover hint, rendered via CSS `::after` using a `data-ljm-viewed-at` attribute set at mark time
+- Viewed job cards now show the date and time first viewed as a hover hint
 - "Add title to ignore list" context menu item — stores the full job title as an exact-match entry (prefixed `=`) in the unwanted-title list
 - "Add selection to ignore list" context menu item — stores the selected text as a substring-match entry; only appears when text is selected
 - Exact-match entries (prefixed `=`) in the unwanted-title list now match only when the full job title equals the entry; unprefixed entries continue to match as substrings
