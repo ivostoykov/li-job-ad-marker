@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.67] - 2026-04-08
+
+### Changed
+- Test harness exports now match the current content-script lifecycle, so the Vitest suite can bootstrap the active observer path again
+
+### Fixed
+- Right-click capture now no-ops cleanly on non-jobs LinkedIn pages instead of throwing when no page adapter is active
+- Non-jobs LinkedIn pages now skip page-marking and clear-mark passes safely when the content script has no active jobs adapter
+- Vitest bootstrap drift around removed adapter helpers is resolved again; `npm test` passes with 133 tests
+
 ## [1.1.65] - 2026-04-04
 
 ### Added

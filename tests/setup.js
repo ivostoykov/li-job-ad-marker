@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
 const indexedDbDatabases = new Map();
+globalThis.__indexedDbDatabases = indexedDbDatabases;
 
 function cloneValue(value) {
   return value === undefined ? value : JSON.parse(JSON.stringify(value));
@@ -103,6 +104,7 @@ globalThis.indexedDB = {
 globalThis.chrome = {
   runtime: {
     getManifest: () => ({ name: 'LJM Test', version: '0.0.0' }),
+    getURL: (path) => `chrome-extension://test/${path}`,
     onMessage: { addListener: () => {} },
   },
   storage: {
@@ -144,11 +146,27 @@ const combined =
     companySearchAdapter,
     TYPE_RANK,
     SETTINGS_DEFAULTS,
-    PAGE_ADAPTERS,
-    getMatchedPageAdapter: () => getMatchedPageAdapter(),
-    getObservedSurface: () => getObservedSurface(),
-    getObserverSnapshot: () => ({ cardObserver, observedSurface }),
-    stopObservingCards: () => stopObservingCards(),
+    getObservedSurface: () => currentPageAdapter ? { adapter: currentPageAdapter } : null,
+    getObserverSnapshot: () => ({ cardObserver, currentPageAdapter, bodyObserverAttached }),
+    stopObservingCards: () => {
+      if (cardObserver) {
+        cardObserver.disconnect();
+        cardObserver = null;
+      }
+      if (cardObserverDebounceTimer) {
+        clearTimeout(cardObserverDebounceTimer);
+        cardObserverDebounceTimer = null;
+      }
+      bodyObserverAttached = false;
+      urlWatcherAttached = false;
+      currentPageAdapter = defaultJobsAdapter;
+      lastRightClickedCard = null;
+      globalThis.__indexedDbDatabases.clear();
+    },
+    startOnJobsPage: async () => {
+      currentPageAdapter = selectPageAdapter();
+      await attachBodyObserver();
+    },
     applyStartupOptions: (options) => applyStartupOptions(options),
     isDebugEnabled: () => debugEnabled,
   };`;

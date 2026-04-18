@@ -5,6 +5,7 @@ const {
   getObserverSnapshot,
   getObservedSurface,
   isDebugEnabled,
+  startOnJobsPage,
   stopObservingCards
 } = globalThis._testExports;
 

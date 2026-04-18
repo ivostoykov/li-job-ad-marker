@@ -423,10 +423,7 @@ function selectPageAdapter() {
 
 function findCardFromNodes(nodes) {
   const adapter = currentPageAdapter;
-  console.debug(
-    `${getLogPrefix(console.debug.name)} - ${getLineNumber()} - Will use this Adapter`,
-    { adapter: currentPageAdapter.name },
-  );
+  if (!adapter) return null;
 
   for (const node of nodes) {
     if (!isElement(node)) continue;
@@ -434,9 +431,6 @@ function findCardFromNodes(nodes) {
     if (card) return card;
   }
 
-  console.debug(
-    `${getLogPrefix(console.debug.name)} - ${getLineNumber()} - No cards found.`,
-  );
   return null;
 }
 
@@ -532,6 +526,8 @@ function applyMark(
 
 function clearAllCardMarks() {
   const adapter = currentPageAdapter;
+  if (!adapter) return;
+
   adapter.getJobCards().forEach((card) => clearCardMarks(card, adapter));
 }
 
@@ -674,6 +670,8 @@ async function markPage() {
   console.debug(
     `${getLogPrefix(console.debug.name)} - ${getLineNumber()} - ${markPage.name} fired.`,
   );
+  if (!currentPageAdapter) return;
+
   await Promise.all([
     markCards(),
     markDetailPanelAging(),
@@ -848,17 +846,8 @@ async function recordCurrentJob() {
 let lastRightClickedCard = null;
 
 document.addEventListener("contextmenu", (e) => {
-  try {
-    const path =
-      typeof e.composedPath === "function" ? e.composedPath() : [e.target];
-    lastRightClickedCard = findCardFromNodes(path);
-  } catch (err) {
-    lastRightClickedCard = null;
-    console.error(
-      `${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to capture context menu target:`,
-      err,
-    );
-  }
+  const path = typeof e.composedPath === "function" ? e.composedPath() : [e.target];
+  lastRightClickedCard = findCardFromNodes(path);
 });
 
 addMessageAction("blacklist-toggle", async () => {
