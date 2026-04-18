@@ -502,6 +502,7 @@ function applyMark(
   isBlacklisted,
   isAgeing,
   isUnwantedTitle,
+  timestamp,
   adapter = currentPageAdapter,
 ) {
   clearCardMarks(card, adapter);
@@ -517,7 +518,10 @@ function applyMark(
     card.classList.add("ljm-applied");
     titleElement?.classList.add("ljm-applied-title");
     stateElement?.classList.add("ljm-applied-state");
-  } else if (jobState === "viewed") card.classList.add("ljm-viewed");
+  } else if (jobState === "viewed") {
+    card.classList.add("ljm-viewed");
+    if (timestamp) card.dataset.ljmViewedAt = new Date(timestamp).toLocaleString();
+  }
 
   if (isAgeing && ageingElement) ageingElement.classList.add("ljm-ageing");
   if (isUnwantedTitle && titleElement)
@@ -571,8 +575,11 @@ function parseUnwantedTitleWords(str) {
 
 function titleMatchesUnwanted(titleText, words) {
   if (!titleText || !words.length) return false;
-  const lower = titleText.toLowerCase();
-  return words.some((w) => lower.includes(w.toLowerCase()));
+  const lower = titleText.toLowerCase().trim();
+  return words.some((w) => {
+    if (w.startsWith('=')) return lower === w.slice(1).toLowerCase().trim();
+    return lower.includes(w.toLowerCase());
+  });
 }
 
 function shouldMarkAgeing(card, adapter, ageingLimitDays) {
@@ -810,6 +817,7 @@ async function markCards() {
       isBlacklisted,
       isAgeing,
       isUnwantedTitle,
+      existing?.timestamp ?? null,
       adapter,
     );
   });
@@ -884,6 +892,36 @@ addMessageAction("applied-mark", async () => {
     `${getLogPrefix(console.debug.name)} - ${getLineNumber()} - marking applied: ${jobId}`,
   );
   await dbSaveJob(jobId, "applied");
+  await markPage();
+});
+
+addMessageAction("ignore-title", async () => {
+  const adapter = currentPageAdapter;
+  const card = getContextCard("ignore-title");
+  if (!card) return;
+
+  const titleText = getTextContent(adapter.getTitleElement?.(card));
+  if (!titleText) {
+    console.warn(
+      `${getLogPrefix(console.warn.name)} - ${getLineNumber()} - ignore-title: title not found for selected card`,
+    );
+    return;
+  }
+
+  const options = await getOptions();
+  const current = options.unwantedTitleWords?.trim() || '';
+  const entry = `=${titleText.trim()}`;
+  await setOptions({ ...options, unwantedTitleWords: current ? `${current}, ${entry}` : entry });
+  await markPage();
+});
+
+addMessageAction("ignore-selection", async (message) => {
+  const text = message.text?.trim();
+  if (!text) return;
+
+  const options = await getOptions();
+  const current = options.unwantedTitleWords?.trim() || '';
+  await setOptions({ ...options, unwantedTitleWords: current ? `${current}, ${text}` : text });
   await markPage();
 });
 

@@ -1,10 +1,31 @@
 .job-card-container.ljm-viewed {
   opacity: var(--ljm-viewed-opacity, 0.45);
+  position: relative;
 }
 
 div[role="button"][componentkey].ljm-viewed,
 a[componentkey][href*="currentJobId="].ljm-viewed {
   opacity: var(--ljm-viewed-opacity, 0.45);
+  position: relative;
+}
+
+.job-card-container.ljm-viewed[data-ljm-viewed-at]:hover::after,
+div[role="button"][componentkey].ljm-viewed[data-ljm-viewed-at]:hover::after,
+a[componentkey][href*="currentJobId="].ljm-viewed[data-ljm-viewed-at]:hover::after {
+  content: "Viewed at " attr(data-ljm-viewed-at);
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  /* background: rgba(0, 0, 0, 0.72); */
+  background-color: yellow;
+  color: #000 !important;
+  /* color: #fff; */
+  font-size: 1rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 9999;
 }
 
 .job-card-container.ljm-applied {
