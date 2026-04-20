@@ -486,6 +486,8 @@ function addMessageRequest(action, handler) {
 
 function clearCardMarks(card, adapter = currentPageAdapter) {
   card.classList.remove("ljm-viewed", "ljm-applied", "ljm-blacklisted");
+  delete card.dataset.ljmViewedAt;
+  delete card.dataset.ljmIgnoredRule;
   const companyElement = adapter.getCompanyElement?.(card);
   const titleElement = adapter.getTitleElement?.(card);
   const stateElement = adapter.getStateElement?.(card);
@@ -524,8 +526,12 @@ function applyMark(
   }
 
   if (isAgeing && ageingElement) ageingElement.classList.add("ljm-ageing");
-  if (isUnwantedTitle && titleElement)
+  if (isUnwantedTitle && titleElement) {
     titleElement.classList.add("ljm-unwanted-title");
+    card.dataset.ljmIgnoredRule = isUnwantedTitle.startsWith('=')
+      ? isUnwantedTitle.slice(1)
+      : isUnwantedTitle;
+  }
 }
 
 function clearAllCardMarks() {
@@ -574,12 +580,12 @@ function parseUnwantedTitleWords(str) {
 }
 
 function titleMatchesUnwanted(titleText, words) {
-  if (!titleText || !words.length) return false;
+  if (!titleText || !words.length) return null;
   const lower = titleText.toLowerCase().trim();
-  return words.some((w) => {
+  return words.find((w) => {
     if (w.startsWith('=')) return lower === w.slice(1).toLowerCase().trim();
     return lower.includes(w.toLowerCase());
-  });
+  }) || null;
 }
 
 function shouldMarkAgeing(card, adapter, ageingLimitDays) {
@@ -909,7 +915,7 @@ addMessageAction("ignore-title", async () => {
   }
 
   const options = await getOptions();
-  const current = options.unwantedTitleWords?.trim() || '';
+  const current = (options.unwantedTitleWords?.trim() || '').replace(/,+$/, '');
   const entry = `=${titleText.trim()}`;
   await setOptions({ ...options, unwantedTitleWords: current ? `${current}, ${entry}` : entry });
   await markPage();
@@ -920,7 +926,7 @@ addMessageAction("ignore-selection", async (message) => {
   if (!text) return;
 
   const options = await getOptions();
-  const current = options.unwantedTitleWords?.trim() || '';
+  const current = (options.unwantedTitleWords?.trim() || '').replace(/,+$/, '');
   await setOptions({ ...options, unwantedTitleWords: current ? `${current}, ${text}` : text });
   await markPage();
 });

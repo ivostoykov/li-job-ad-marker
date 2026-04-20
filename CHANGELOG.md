@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.72] - 2026-04-20
+
+### Added
+- Cards matching an unwanted-title rule now show a persistent `"Ignored: <rule>"` badge with a light-red background, identifying which rule triggered the strikethrough
+
+### Fixed
+- Adding to the ignore list via context menu no longer produces a double comma when the stored list ends with a trailing comma
+
 ## [1.1.70] - 2026-04-18
 
 ### Added
