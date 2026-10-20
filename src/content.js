@@ -565,6 +565,7 @@ function applyColourSettings(colours) {
 }
 
 function applyStartupOptions(options) {
+  options = normaliseOptions(options);
   if (options?.colours) applyColourSettings(options.colours);
   if (typeof setDebugFlag === "function") {
     setDebugFlag(options?.debug ?? false, { silent: true });
@@ -701,7 +702,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
   Promise.resolve()
     .then(() => {
-      const newOptions = changes[SETTINGS_KEY].newValue;
+      const newOptions = normaliseOptions(changes[SETTINGS_KEY].newValue);
       if (newOptions?.colours) applyColourSettings(newOptions.colours);
       return markPage();
     })
@@ -937,6 +938,7 @@ addMessageAction("marker-toggle", async () => {
   if (!enabled) {
     clearAllCardMarks();
     clearDetailPanelAging();
+    clearDetailPanelUnwantedTitle();
   } else {
     await markPage();
   }

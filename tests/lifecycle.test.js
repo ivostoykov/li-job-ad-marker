@@ -97,3 +97,49 @@ describe('content lifecycle', () => {
     expect(style?.textContent).toContain('--ljm-blacklisted-colour: #654321;');
   });
 });
+
+
+describe('settings and marker messages', () => {
+  beforeEach(() => {
+    stopObservingCards();
+    document.head.innerHTML = '';
+    document.body.innerHTML = '';
+    history.replaceState({}, '', '/');
+  });
+  afterEach(() => stopObservingCards());
+
+  it('normalises live settings and resets removed settings, including debug', async () => {
+    const dispatch = async (newValue) => {
+      for (const listener of globalThis.__storageChangeListeners) {
+        listener({ 'ljm-options': { newValue } }, 'sync');
+      }
+      await flushAsyncWork();
+    };
+    await dispatch({ debug: true, colours: { viewed: 0, applied: '#123456', blacklisted: '#654321' } });
+    expect(isDebugEnabled()).toBe(true);
+    expect(document.getElementById('ljm-colours').textContent).toContain('--ljm-viewed-opacity: 0;');
+    await dispatch({ debug: 'false', colours: { viewed: Infinity, applied: 'red; } body { color: red', blacklisted: null } });
+    expect(isDebugEnabled()).toBe(false);
+    expect(document.getElementById('ljm-colours').textContent).toContain('--ljm-applied-colour: #32cd32;');
+    expect(document.getElementById('ljm-colours').textContent).not.toContain('body');
+    await dispatch(undefined);
+    expect(document.getElementById('ljm-colours').textContent).toContain('--ljm-viewed-opacity: 0.45;');
+  });
+
+  it('clears detail title, ageing and card badges through the actual marker-toggle message', async () => {
+    history.replaceState({}, '', '/jobs/search/');
+    const card = makeClassicJobsSurface();
+    const title = document.createElement('h1');
+    title.className = 'ljm-detail-unwanted-title ljm-detail-ageing';
+    document.body.appendChild(title);
+    applyMark(card, 'viewed', false, false, '=Engineer', undefined, globalThis._testExports.defaultJobsAdapter);
+    for (const listener of globalThis.__runtimeMessageListeners) {
+      listener({ action: 'marker-toggle' }, {}, () => {});
+    }
+    await flushAsyncWork();
+    expect(title.classList.contains('ljm-detail-unwanted-title')).toBe(false);
+    expect(title.classList.contains('ljm-detail-ageing')).toBe(false);
+    expect(card.hasAttribute('data-ljm-ignored-rule')).toBe(false);
+    expect(card.classList.contains('ljm-viewed')).toBe(false);
+  });
+});
