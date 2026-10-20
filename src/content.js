@@ -1,6 +1,8 @@
 let enabled = true;
 
 const JOB_LINK_RE = /\/jobs\/view\/(\d+)/;
+const COMPANY_LINK_RE = /^\/company\/([^/?#]+)/;
+const COMPANY_LINK_SELECTOR = 'a[href*="/company/"]';
 const JOB_CARD_SELECTOR = ".job-card-container";
 const JOB_LINK_SELECTOR = 'a[href*="/jobs/view/"]';
 const JOB_CARD_WRAPPER_SELECTOR = "li[data-occludable-job-id]";
@@ -121,6 +123,25 @@ function extractJobId(anchor) {
   return match ? match[1] : null;
 }
 
+// Path-based only: Premium upsell links carry a companyUrn query parameter for
+// another company and must never be taken as the advertiser.
+function extractCompanySlug(anchor) {
+  try {
+    const url = new URL(anchor?.getAttribute?.("href") ?? "", location.origin);
+    if (url.origin !== location.origin) return null;
+    const match = url.pathname.match(COMPANY_LINK_RE);
+    return match ? decodeURIComponent(match[1]).toLowerCase() : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+function findCompanyLink(root) {
+  return [...(root?.querySelectorAll(COMPANY_LINK_SELECTOR) || [])].find(
+    (anchor) => extractCompanySlug(anchor),
+  ) || null;
+}
+
 const defaultJobsAdapter = {
   name: "default-jobs",
   getJobCards() {
@@ -143,6 +164,18 @@ const defaultJobsAdapter = {
   },
   getCompanyElement(card) {
     return card?.querySelector(".artdeco-entity-lockup__subtitle") || null;
+  },
+  getCompanySlug(card) {
+    return extractCompanySlug(findCompanyLink(card));
+  },
+  getDetailPanelCompany() {
+    const container = document.querySelector(
+      ".job-details-jobs-unified-top-card__company-name",
+    );
+    const anchor = findCompanyLink(container);
+    const name = getTextContent(anchor) || getTextContent(container);
+    const slug = extractCompanySlug(anchor);
+    return name && slug ? { name, slug } : null;
   },
   getTitleElement(card) {
     return card?.querySelector(".job-card-container__link") || null;
@@ -319,6 +352,14 @@ const aiSearchAdapter = {
     const panel = this.getDetailPanelElement();
     return panel?.querySelector('a[href*="/jobs/view/"]') || null;
   },
+  getDetailPanelCompany() {
+    const links = [
+      ...(this.getDetailPanelElement()?.querySelectorAll(COMPANY_LINK_SELECTOR) || []),
+    ].filter((anchor) => extractCompanySlug(anchor));
+    const anchor = links.find((link) => getTextContent(link)) || null;
+    const name = getTextContent(anchor);
+    return name ? { name, slug: extractCompanySlug(anchor) } : null;
+  },
   getCompanyName(card) {
     return getTextContent(this.getCompanyElement(card));
   },
@@ -440,6 +481,27 @@ function getContextCard(action) {
     `${getLogPrefix(console.debug.name)} - ${getLineNumber()} - ${action}: no job card captured from context menu`,
   );
   return null;
+}
+
+// Card slug first; the detail-panel slug only when the URL and the rendered
+// panel both show this card's job and the company names match, so a stale panel
+// during SPA navigation never lends its slug to another company.
+function getCardCompanyIdentity(card, adapter = currentPageAdapter) {
+  const name = adapter?.getCompanyName(card) ?? null;
+  if (!name) return null;
+
+  const slug = adapter.getCompanySlug?.(card) ?? null;
+  if (slug) return { name, slug };
+
+  const jobId = adapter.getJobId(card);
+  const detail = adapter.getDetailPanelCompany?.() ?? null;
+  const matchesOpenJob =
+    jobId &&
+    jobId === adapter.getCurrentJobId?.() &&
+    jobId === extractJobId(adapter.getDetailPanelTitleElement?.()) &&
+    detail &&
+    normaliseNameKey(detail.name) === normaliseNameKey(name);
+  return { name, slug: matchesOpenJob ? detail.slug : null };
 }
 
 function addMessageAction(action, handler) {
@@ -690,6 +752,7 @@ async function markPage() {
     markCards(),
     markDetailPanelAging(),
     markDetailPanelUnwantedTitle(),
+    captureDetailPanelCompanySlug(),
   ]);
 }
 
@@ -748,14 +811,14 @@ async function markCards() {
 
   const [allJobs, blacklist, options] = await Promise.all([
     dbGetAllJobs(),
-    blGetList(),
+    blGetCompanies(),
     getOptions(),
   ]);
   const ageingLimitDays = getValidAgeingLimitDays(options);
   const unwantedWords = parseUnwantedTitleWords(options.unwantedTitleWords);
   const jobMap = {};
   allJobs.forEach((j) => {
-    jobMap[j.id] = j;
+    jobMap[j.linkedInJobId] = j;
   });
 
   const saves = [];
@@ -775,6 +838,7 @@ async function markCards() {
   jobCards.forEach((card) => {
     const jobId = adapter.getJobId(card);
     const company = adapter.getCompanyName(card);
+    const companySlug = company ? (adapter.getCompanySlug?.(card) ?? null) : null;
     const existing = jobId ? jobMap[jobId] : null;
     const linkedInState = adapter.getLinkedInJobState(card);
     const effectiveLinkedInState =
@@ -792,14 +856,19 @@ async function markCards() {
       effectiveLinkedInState &&
       shouldPromoteState(existing?.type, effectiveLinkedInState)
     ) {
-      saves.push(
-        dbSaveJob(jobId, effectiveLinkedInState).then(() => {
-          jobMap[jobId] = { id: jobId, type: effectiveLinkedInState };
-        }),
-      );
+      saves.push({ linkedInJobId: jobId, type: effectiveLinkedInState });
+      jobMap[jobId] = { linkedInJobId: jobId, type: effectiveLinkedInState };
     }
 
-    const isBlacklisted = !!(company && blacklist.includes(company));
+    const companyKey = normaliseNameKey(company);
+    const isBlacklisted = !!(
+      company &&
+      blacklist.some(
+        (c) =>
+          c.nameKey === companyKey &&
+          (!companySlug || !c.slug || c.slug === companySlug),
+      )
+    );
     const jobState = shouldPromoteState(existing?.type, effectiveLinkedInState)
       ? effectiveLinkedInState
       : (existing?.type ?? effectiveLinkedInState);
@@ -824,12 +893,12 @@ async function markCards() {
       isBlacklisted,
       isAgeing,
       isUnwantedTitle,
-      existing?.timestamp ?? null,
+      existing?.stateAt ?? null,
       adapter,
     );
   });
 
-  await Promise.all(saves);
+  await dbSaveJobs(saves);
   console.debug(
     `${getLogPrefix(console.debug.name)} - ${getLineNumber()} - markCards() summary`,
     {
@@ -870,16 +939,18 @@ addMessageAction("blacklist-toggle", async () => {
   const card = getContextCard("blacklist-toggle");
   if (!card) return;
 
-  const company = adapter.getCompanyName(card);
-  if (!company) {
+  const identity = getCardCompanyIdentity(card, adapter);
+  if (!identity) {
     console.warn(
       `${getLogPrefix(console.warn.name)} - ${getLineNumber()} - blacklist-toggle: company name not found for selected card`,
     );
     return;
   }
 
-  const listed = await blIncludes(company);
-  await (listed ? blRemove(company) : blAdd(company));
+  const listed = await blIncludes(identity.name, identity.slug);
+  await (listed
+    ? blRemove(identity.name, identity.slug)
+    : blAdd(identity.name, identity.slug));
   await markPage();
 });
 
@@ -944,16 +1015,43 @@ addMessageAction("marker-toggle", async () => {
   }
 });
 
-addMessageRequest("get-all-jobs", async () => {
-  const jobs = await dbGetAllJobs();
-  return { jobs };
+addMessageAction("data-changed", (message) => {
+  if (!enabled || !currentPageAdapter) return;
+  if (!message.companies && (DB_IS_INCOGNITO || !message.jobs?.length)) return;
+  return markPage();
 });
 
-addMessageRequest("import-jobs", async (message) => {
-  const jobs = message.jobs ?? [];
-  await Promise.all(jobs.map((j) => dbRestoreJob(j.id, j.type, j.timestamp)));
-  return { ok: true };
-});
+let lastAttachedCompanySlug = null;
+
+// Opportunistic #6 capture: only sent when a slug-less blacklisted record of
+// that name exists, and once per name/slug pair per frame.
+async function captureDetailPanelCompanySlug() {
+  if (!enabled) return;
+  const detail = currentPageAdapter?.getDetailPanelCompany?.();
+  if (!detail?.slug) return;
+
+  const nameKey = normaliseNameKey(detail.name);
+  const pairKey = `${nameKey}\u001f${detail.slug}`;
+  if (pairKey === lastAttachedCompanySlug) return;
+
+  const blacklist = await blGetCompanies();
+  if (!blacklist.some((c) => c.nameKey === nameKey && !c.slug)) return;
+  if (blacklist.some((c) => c.nameKey === nameKey && c.slug === detail.slug)) return;
+
+  lastAttachedCompanySlug = pairKey;
+  await chrome.runtime
+    .sendMessage({
+      action: "companies.attachSlug",
+      name: detail.name,
+      slug: detail.slug,
+    })
+    .catch((e) =>
+      console.error(
+        `${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to attach company slug:`,
+        e,
+      ),
+    );
+}
 
 let cardObserver = null;
 let cardObserverDebounceTimer = null;
@@ -1239,6 +1337,15 @@ async function initialiseContentScript() {
     console.error(
       `${getLogPrefix(console.error.name)} - ${getLineNumber()} - Failed to load initial options:`,
       e,
+    );
+  }
+
+  if (window === window.top) {
+    dbMigrateLegacyJobs().catch((e) =>
+      console.error(
+        `${getLogPrefix(console.error.name)} - ${getLineNumber()} - Legacy job migration failed; will retry on next load:`,
+        e,
+      ),
     );
   }
 

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createDevice, SyncArea } from './helpers/background-device.js';
 
 let page;
 afterEach(() => page?.window.close());
@@ -12,12 +13,18 @@ async function openOptions(stored) {
   const { window } = page;
   await new Promise((resolve) => window.addEventListener('DOMContentLoaded', resolve));
   const writes = [];
+  // Settings saves go through the real background `settings.set` route.
+  const sync = new SyncArea();
+  if (stored !== undefined) sync.data.set('ljm-options', stored);
+  const write = sync.set.bind(sync);
+  sync.set = async (value) => {
+    if ('ljm-options' in value) writes.push(value);
+    return write(value);
+  };
+  const background = createDevice({ sync });
   window.chrome = {
-    runtime: { getManifest: () => ({ name: 'Test', version: '1' }) },
-    storage: { sync: {
-      get: async () => ({ 'ljm-options': stored }),
-      set: async (value) => { writes.push(value); stored = value['ljm-options']; }
-    } }
+    runtime: { getManifest: () => ({ name: 'Test', version: '1' }), sendMessage: (message) => background.send(message) },
+    storage: { sync }
   };
   for (const file of ['src/js/settings.js', 'src/js/options.js']) {
     window.eval(readFileSync(file, 'utf8'));

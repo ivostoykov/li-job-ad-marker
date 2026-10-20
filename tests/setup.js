@@ -1,127 +1,48 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { IDBFactory } from 'fake-indexeddb';
+import { createDevice, StorageArea, SyncArea } from './helpers/background-device.js';
 
-const indexedDbDatabases = new Map();
-globalThis.__indexedDbDatabases = indexedDbDatabases;
-
-function cloneValue(value) {
-  return value === undefined ? value : JSON.parse(JSON.stringify(value));
-}
-
-function createIdbRequest(executor) {
-  const request = {
-    onsuccess: null,
-    onerror: null,
-    onupgradeneeded: null,
-    result: undefined,
-    error: null,
-  };
-
-  setTimeout(() => executor(request), 0);
-  return request;
-}
-
-function createDatabase(name, version) {
-  const stores = new Map();
-
-  return {
-    name,
-    version,
-    objectStoreNames: {
-      contains(storeName) {
-        return stores.has(storeName);
-      },
-    },
-    createObjectStore(storeName, { keyPath } = {}) {
-      if (!stores.has(storeName)) {
-        stores.set(storeName, { keyPath, records: new Map() });
-      }
-      return {};
-    },
-    transaction(storeName) {
-      const store = stores.get(storeName);
-      if (!store) throw new Error(`Object store "${storeName}" does not exist`);
-
-      return {
-        objectStore() {
-          return {
-            get(key) {
-              return createIdbRequest((request) => {
-                request.result = cloneValue(store.records.get(key));
-                request.onsuccess?.({ target: request });
-              });
-            },
-            put(value) {
-              return createIdbRequest((request) => {
-                const key = store.keyPath ? value[store.keyPath] : value.id;
-                store.records.set(key, cloneValue(value));
-                request.result = key;
-                request.onsuccess?.({ target: request });
-              });
-            },
-            getAll() {
-              return createIdbRequest((request) => {
-                request.result = [...store.records.values()].map(cloneValue);
-                request.onsuccess?.({ target: request });
-              });
-            },
-          };
-        },
-      };
-    },
-  };
-}
-
-globalThis.indexedDB = {
-  open(name, version) {
-    return createIdbRequest((request) => {
-      let db = indexedDbDatabases.get(name);
-      const isNewDatabase = !db;
-
-      if (!db) {
-        db = createDatabase(name, version);
-        indexedDbDatabases.set(name, db);
-      }
-
-      if (isNewDatabase) {
-        request.onupgradeneeded?.({ target: { result: db } });
-      }
-
-      request.result = db;
-      request.onsuccess?.({ target: request });
-    });
-  },
-  deleteDatabase(name) {
-    indexedDbDatabases.delete(name);
-    return createIdbRequest((request) => {
-      request.result = undefined;
-      request.onsuccess?.({ target: request });
-    });
-  },
-};
+// Content scripts get a real IndexedDB (fake-indexeddb) for the legacy and
+// incognito paths, and talk to a real background device for persistent data.
+globalThis.__IDBFactory = IDBFactory;
+globalThis.indexedDB = new IDBFactory();
 
 globalThis.__runtimeMessageListeners = [];
 globalThis.__storageChangeListeners = [];
 
-// Chrome API mock — must be set before any source script is evaluated
+// Chrome API mock — must be set before any source script is evaluated. The
+// storage areas are shared with the background device, as in the extension.
+const syncArea = new SyncArea();
+const localArea = new StorageArea('local');
+syncArea.listeners.push((changes, area) => globalThis.__storageChangeListeners.forEach((l) => l(changes, area)));
+localArea.listeners.push((changes, area) => globalThis.__storageChangeListeners.forEach((l) => l(changes, area)));
+
+function deliverToContent(message) {
+  globalThis.__runtimeMessageListeners.forEach((listener) => listener(message, {}, () => {}));
+}
+
+globalThis.__createBackground = () => {
+  syncArea.data.clear();
+  localArea.data.clear();
+  syncArea.listeners.splice(1);
+  localArea.listeners.splice(1);
+  globalThis.__background = createDevice({ sync: syncArea, local: localArea, deliverToTab: deliverToContent });
+  return globalThis.__background;
+};
+globalThis.__createBackground();
+
 globalThis.chrome = {
+  extension: { inIncognitoContext: false },
   runtime: {
     getManifest: () => ({ name: 'LJM Test', version: '0.0.0' }),
     getURL: (path) => `chrome-extension://test/${path}`,
     onMessage: { addListener: (listener) => globalThis.__runtimeMessageListeners.push(listener) },
+    sendMessage: (message) => globalThis.__background.send(message),
   },
   storage: {
-    sync: {
-      get: (key, callback) => {
-        const result = typeof key === 'string' ? { [key]: undefined } : {};
-        if (typeof callback === 'function') { callback(result); return; }
-        return Promise.resolve(result);
-      },
-      set: (_obj, callback) => {
-        if (typeof callback === 'function') { callback(); return; }
-        return Promise.resolve();
-      },
-    },
+    sync: syncArea,
+    local: localArea,
     onChanged: { addListener: (listener) => globalThis.__storageChangeListeners.push(listener) },
   },
 };
@@ -165,7 +86,12 @@ const combined =
       currentPageAdapter = defaultJobsAdapter;
       lastRightClickedCard = null;
       enabled = true;
-      globalThis.__indexedDbDatabases.clear();
+      dbJobsCache = null;
+      dbJobsPending = [];
+      blCache = null;
+      blCacheRevision = 0;
+      globalThis.indexedDB = new globalThis.__IDBFactory();
+      globalThis.__createBackground();
     },
     startOnJobsPage: async () => {
       currentPageAdapter = selectPageAdapter();

@@ -21,3 +21,13 @@ function hexToRgba(hex, alpha) {
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+const TYPE_RANK = { viewed: 1, applied: 2 };
+
+function normaliseNameKey(text) {
+  return String(text ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function noteGroupKey(title, company) {
+  return `${normaliseNameKey(title)}\u001f${normaliseNameKey(company)}`;
+}

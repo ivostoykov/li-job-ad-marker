@@ -48,6 +48,9 @@ function getOptions() {
   return chrome.storage.sync.get(SETTINGS_KEY).then((result) => normaliseOptions(result[SETTINGS_KEY]));
 }
 
-function setOptions(options) {
-  return chrome.storage.sync.set({ [SETTINGS_KEY]: normaliseOptions(options) });
+// Routed through the background so saves from any context are serialised with
+// backup imports (see `settings.set` in src/background.js).
+async function setOptions(options) {
+  const response = await chrome.runtime.sendMessage({ action: 'settings.set', options });
+  if (!response?.ok) throw new Error(response?.error || 'settings.set failed');
 }
