@@ -103,6 +103,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 const INCOGNITO_REFUSED_ACTIONS = ['jobs.save', 'jobs.migrateLegacy', 'notes.add', 'notes.update', 'notes.delete'];
+// Whole-database reads and replacement are for extension pages only, never content scripts.
+const EXTENSION_PAGE_ACTIONS = ['data.export', 'data.import'];
 
 function broadcastDataChanged(change) {
   const message = { action: 'data-changed', ...change };
@@ -207,6 +209,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (sender?.tab?.incognito && INCOGNITO_REFUSED_ACTIONS.includes(message.action)) {
     sendResponse({ ok: false, error: 'incognito' });
+    return false;
+  }
+
+  if (EXTENSION_PAGE_ACTIONS.includes(message.action) && !sender?.url?.startsWith(chrome.runtime.getURL(''))) {
+    sendResponse({ ok: false, error: 'forbidden' });
     return false;
   }
 

@@ -162,7 +162,7 @@ export function createDevice({ sync = new SyncArea(), local = new StorageArea('l
     menuItems,
     menuListeners,
     ready: () => vm.runInContext('ensureDataReady()', context),
-    send(message, sender = { tab: { id: 1, incognito: false } }) {
+    send(message, sender = { id: 'test', url: 'chrome-extension://test/src/options.html' }) {
       return new Promise((resolvePromise) => {
         const handled = runtimeListeners.some((listener) => listener(clone(message), sender, (r) => resolvePromise(clone(r))) === true);
         if (!handled) resolvePromise(undefined);
@@ -174,8 +174,8 @@ export function createDevice({ sync = new SyncArea(), local = new StorageArea('l
 
 // Waits until queued storage events and serialised mutations settle.
 export async function settle(...devices) {
-  for (let i = 0; i < 5; i += 1) {
-    await new Promise((r) => setTimeout(r, 5));
+  for (let i = 0; i < 10; i += 1) {
+    await new Promise((r) => setTimeout(r, 10));
     for (const device of devices) await device.idle();
   }
 }

@@ -110,6 +110,8 @@ async function syncWriteLegacy() {
     chrome.storage.sync.get([SYNC_LEGACY_BLACKLIST_KEY, SYNC_LEGACY_WRITER_KEY]),
     chrome.storage.local.get(SYNC_LEGACY_SEEN_KEY),
   ]);
+  // A fresh device must not publish an empty array before synced data arrives.
+  if (!names.length && !Array.isArray(legacy[SYNC_LEGACY_BLACKLIST_KEY])) return;
   if (sameNames(legacy[SYNC_LEGACY_BLACKLIST_KEY], names) && sameNames(legacy[SYNC_LEGACY_WRITER_KEY], names) &&
     sameNames(seen[SYNC_LEGACY_SEEN_KEY], names)) return;
 
@@ -123,8 +125,11 @@ async function syncWriteLegacy() {
 }
 
 // Applies additions and removals made by older versions as a diff against the
-// last array this device saw, so unchanged names never resurrect tombstones.
-// An absent snapshot means first run: every name is an addition (migration).
+// last array this device saw. An absent snapshot means first run (migration).
+// Conservative policy, as the old format has no timestamps: an addition only
+// creates companies unknown here; a known tombstone is never revived, so a stale
+// array cannot undo a newer deletion. Re-blacklisting a deleted company needs a
+// current version (an old-version re-add of it is not applied).
 async function syncApplyLegacy(now = Date.now()) {
   const [legacyResult, seenResult] = await Promise.all([
     chrome.storage.sync.get([SYNC_LEGACY_BLACKLIST_KEY, SYNC_LEGACY_WRITER_KEY]),
@@ -138,13 +143,10 @@ async function syncApplyLegacy(now = Date.now()) {
     await chrome.storage.local.set({ [SYNC_LEGACY_SEEN_KEY]: names });
     return [];
   }
-  const firstRun = !Array.isArray(seenResult[SYNC_LEGACY_SEEN_KEY]);
-  const seen = firstRun ? [] : seenResult[SYNC_LEGACY_SEEN_KEY];
+  const seen = seenResult[SYNC_LEGACY_SEEN_KEY] ?? [];
   const legacyKeys = new Set(names.map(normaliseNameKey));
   const seenKeys = new Set(seen.map(normaliseNameKey));
-  // Without a baseline, names already known locally or from the mirror (active
-  // or tombstoned) keep their known state; only unknown names are migrated.
-  const knownKeys = firstRun ? new Set((await companiesGetAll()).map((c) => c.nameKey)) : new Set();
+  const knownKeys = new Set((await companiesGetAll()).map((c) => c.nameKey));
   const changed = [];
 
   for (const name of names.filter((n) => !seenKeys.has(normaliseNameKey(n)) && !knownKeys.has(normaliseNameKey(n)))) {
@@ -214,6 +216,9 @@ async function syncReconcile(now = Date.now()) {
 
   if (expiredKeys.length) await chrome.storage.sync.remove(expiredKeys);
   await syncPushCompanies(toPush, now);
-  await syncWriteLegacy();
-  return [...applied, ...merged, ...legacyChanged];
+  // Start-up only rewrites the legacy array when something changed here or it
+  // is missing, so a device with stale state does not overwrite newer arrays.
+  const changed = [...applied, ...merged, ...legacyChanged];
+  if (changed.length || !Array.isArray(all[SYNC_LEGACY_BLACKLIST_KEY])) await syncWriteLegacy();
+  return changed;
 }
