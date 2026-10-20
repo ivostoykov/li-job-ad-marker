@@ -8,13 +8,36 @@ const NOTES_ERROR_MESSAGES = {
 };
 
 let notesPopupState = null;
+let cardNotesGeneration = 0;
 
 function getCardNoteContext(card, adapter = currentPageAdapter) {
+  const linkedInJobId = adapter.getJobId(card) || null;
+  const company = adapter.getCompanyName(card);
+  let companySlug = adapter.getCompanySlug?.(card) || null;
+
+  // A detail-panel slug only belongs to this card when the selected job and
+  // the job rendered in the panel are both this card's job.
+  if (
+    !companySlug &&
+    linkedInJobId &&
+    company &&
+    linkedInJobId === adapter.getCurrentJobId?.() &&
+    linkedInJobId === extractJobId(adapter.getDetailPanelTitleElement?.())
+  ) {
+    const detailCompany = adapter.getDetailPanelCompany?.();
+    if (
+      detailCompany?.slug &&
+      normaliseNameKey(detailCompany.name) === normaliseNameKey(company)
+    ) {
+      companySlug = detailCompany.slug;
+    }
+  }
+
   return {
-    linkedInJobId: adapter.getJobId(card) || null,
+    linkedInJobId,
     title: getTextContent(adapter.getTitleElement?.(card)),
-    company: adapter.getCompanyName(card),
-    companySlug: null,
+    company,
+    companySlug,
   };
 }
 
@@ -130,7 +153,7 @@ function buildNotesPopup(context) {
   list.className = "ljm-notes-list";
 
   popup.append(header, status, draftSection, list);
-  return { popup, status, draft, list };
+  return { popup, status, draft, addButton, list };
 }
 
 function buildNoteEntry(note, state) {
@@ -158,11 +181,18 @@ function buildNoteEntry(note, state) {
     const saveButton = document.createElement("button");
     saveButton.type = "button";
     saveButton.textContent = "Save";
+    saveButton.disabled = editor.pending;
     saveButton.addEventListener("click", () => updateNoteFromEditor(note.id));
     const cancelButton = document.createElement("button");
     cancelButton.type = "button";
     cancelButton.textContent = "Cancel";
+    cancelButton.disabled = editor.pending;
     cancelButton.addEventListener("click", () => {
+      if (
+        editor.textarea.value !== editor.note.text &&
+        !window.confirm(NOTES_DISCARD_PROMPT)
+      )
+        return;
       state.editors.delete(note.id);
       renderNotesList(state.notes, state);
     });
@@ -183,13 +213,14 @@ function buildNoteEntry(note, state) {
     textarea.className = "ljm-notes-textarea";
     textarea.value = note.text;
     textarea.rows = 3;
-    state.editors.set(note.id, { note, textarea });
+    state.editors.set(note.id, { note, textarea, pending: false });
     renderNotesList(state.notes, state);
     textarea.focus();
   });
   const deleteButton = document.createElement("button");
   deleteButton.type = "button";
   deleteButton.textContent = "Delete";
+  deleteButton.disabled = state.pendingDeletes.has(note.id);
   deleteButton.addEventListener("click", () => deleteNoteEntry(note.id));
   actions.append(editButton, deleteButton);
 
@@ -222,6 +253,7 @@ function renderNotesList(notes, state = notesPopupState) {
 async function refreshNotesPopup(state = notesPopupState) {
   if (!state) return;
 
+  const generation = ++state.listGeneration;
   const { title, company, companySlug } = state.context;
   const response = await chrome.runtime.sendMessage({
     action: "notes.listGroup",
@@ -229,7 +261,7 @@ async function refreshNotesPopup(state = notesPopupState) {
     company,
     companySlug,
   }).catch((e) => ({ ok: false, error: e?.message || String(e) }));
-  if (notesPopupState !== state) return;
+  if (notesPopupState !== state || generation !== state.listGeneration) return;
   if (!response?.ok) {
     showNotesError(response?.error ?? "no response", state);
     return;
@@ -238,11 +270,13 @@ async function refreshNotesPopup(state = notesPopupState) {
 }
 
 async function addNoteFromDraft(state = notesPopupState) {
-  if (!state) return;
+  if (!state || state.addPending) return;
 
   const text = state.draft.value.trim();
   if (!text) return;
 
+  state.addPending = true;
+  state.addButton.disabled = true;
   const { linkedInJobId, title, company, companySlug } = state.context;
   const response = await chrome.runtime.sendMessage({
     action: "notes.add",
@@ -252,20 +286,22 @@ async function addNoteFromDraft(state = notesPopupState) {
     companySlug,
     text,
   }).catch((e) => ({ ok: false, error: e?.message || String(e) }));
+  state.addPending = false;
+  state.addButton.disabled = false;
   if (notesPopupState !== state) return;
   if (!response?.ok) {
     showNotesError(response?.error ?? "no response", state);
     return;
   }
 
-  state.draft.value = "";
+  if (state.draft.value.trim() === text) state.draft.value = "";
   showNotesStatus("", state);
   await refreshNotesPopup(state);
 }
 
 async function updateNoteFromEditor(id, state = notesPopupState) {
   const editor = state?.editors.get(id);
-  if (!editor) return;
+  if (!editor || editor.pending) return;
 
   const text = editor.textarea.value.trim();
   if (!text) {
@@ -273,30 +309,40 @@ async function updateNoteFromEditor(id, state = notesPopupState) {
     return;
   }
 
+  editor.pending = true;
+  renderNotesList(state.notes, state);
   const response = await chrome.runtime.sendMessage({
     action: "notes.update",
     id,
     text,
   }).catch((e) => ({ ok: false, error: e?.message || String(e) }));
+  editor.pending = false;
   if (notesPopupState !== state) return;
   if (!response?.ok) {
+    renderNotesList(state.notes, state);
     showNotesError(response?.error ?? "no response", state);
     return;
   }
 
-  state.editors.delete(id);
+  editor.note = response.note;
+  if (editor.textarea.value.trim() === text) state.editors.delete(id);
   showNotesStatus("", state);
   await refreshNotesPopup(state);
 }
 
 async function deleteNoteEntry(id, state = notesPopupState) {
-  if (!state || !window.confirm(NOTES_DELETE_PROMPT)) return;
+  if (!state || state.pendingDeletes.has(id)) return;
+  if (!window.confirm(NOTES_DELETE_PROMPT)) return;
 
+  state.pendingDeletes.add(id);
+  renderNotesList(state.notes, state);
   const response = await chrome.runtime.sendMessage({
     action: "notes.delete",
     id,
   }).catch((e) => ({ ok: false, error: e?.message || String(e) }));
+  state.pendingDeletes.delete(id);
   if (notesPopupState !== state) return;
+  renderNotesList(state.notes, state);
   if (!response?.ok) {
     showNotesError(response?.error ?? "no response", state);
     return;
@@ -317,6 +363,9 @@ async function openNotesPopup(context, anchorRect, { focusDraft = false } = {}) 
     anchorRect,
     notes: [],
     editors: new Map(),
+    pendingDeletes: new Set(),
+    addPending: false,
+    listGeneration: 0,
     onResize: () => positionNotesPopup(state),
     onKeyDown: (event) => {
       if (!state.popup.contains(event.target) && event.key !== "Escape") return;
@@ -366,17 +415,25 @@ async function markCardNotes() {
   const cards = [...adapter.getJobCards()];
   if (!cards.length) return;
 
-  const groups = cards.map((card) => {
-    const { title, company, companySlug } = getCardNoteContext(card, adapter);
-    return { title, company, companySlug };
-  });
+  const generation = ++cardNotesGeneration;
+  const contexts = cards.map((card) => getCardNoteContext(card, adapter));
+  const groups = contexts.map(({ title, company, companySlug }) => ({
+    title,
+    company,
+    companySlug,
+  }));
 
   try {
     const response = await chrome.runtime.sendMessage({
       action: "notes.groupsWithNotes",
       groups,
     });
-    if (!enabled || adapter !== currentPageAdapter) return;
+    if (
+      !enabled ||
+      adapter !== currentPageAdapter ||
+      generation !== cardNotesGeneration
+    )
+      return;
     if (!response?.ok) {
       console.warn(
         `${getLogPrefix(console.warn.name)} - ${getLineNumber()} - notes.groupsWithNotes failed:`,
@@ -387,7 +444,18 @@ async function markCardNotes() {
 
     cards.forEach((card, index) => {
       clearCardNoteMarkers(card);
-      if (!response.matches?.[index]) return;
+      if (!response.matches?.[index] || !card.isConnected) return;
+
+      // LinkedIn recycles card elements; skip cards that now show another job.
+      const current = getCardNoteContext(card, adapter);
+      const sent = contexts[index];
+      if (
+        current.linkedInJobId !== sent.linkedInJobId ||
+        current.title !== sent.title ||
+        current.company !== sent.company ||
+        current.companySlug !== sent.companySlug
+      )
+        return;
       const target =
         adapter.getStateElement?.(card) || adapter.getTitleElement?.(card);
       target?.setAttribute(NOTE_MARKER_ATTRIBUTE, "");

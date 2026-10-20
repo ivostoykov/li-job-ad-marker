@@ -3,6 +3,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { defaultJobsAdapter, getNotesPopupState, setMarkerEnabled, stopObservingCards } =
   globalThis._testExports;
 
+// Provided by src/js/utils.js on the background data branch (dev1).
+globalThis.normaliseNameKey ??= (text) => String(text ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function holdAction(background, action) {
+  const held = [];
+  const passThrough = background.sendMessage.getMockImplementation();
+  background.sendMessage.mockImplementation((message) => {
+    if (message.action !== action) return passThrough(message);
+    const gate = deferred();
+    held.push({ message, release: (override) => gate.resolve(override ?? passThrough(message)) });
+    return gate.promise;
+  });
+  return held;
+}
+
 function groupKeyOf({ title, company }) {
   const normalise = (text) => String(text ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
   return `${normalise(title)}\u001f${normalise(company)}`;
@@ -498,6 +519,236 @@ describe('card notes UI', () => {
       expect(card.querySelector('[data-ljm-notes]')).not.toBeNull();
       expect(error).toHaveBeenCalled();
       error.mockRestore();
+    });
+  });
+
+  describe('pending saves', () => {
+    it('sends one add for a double click and keeps text typed while saving', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      const held = holdAction(background, 'notes.add');
+      const draft = popup().querySelector('.ljm-notes-draft textarea');
+      const addButton = popup().querySelector('.ljm-notes-add');
+
+      draft.value = 'First';
+      addButton.click();
+      addButton.click();
+      addNoteFromDraft();
+      await flushAsyncWork();
+      expect(held).toHaveLength(1);
+      expect(addButton.disabled).toBe(true);
+
+      draft.value = 'First and more';
+      held[0].release();
+      for (let i = 0; i < 5; i += 1) await flushAsyncWork();
+
+      expect(background.notes.map((note) => note.text)).toEqual(['First']);
+      expect(draft.value).toBe('First and more');
+      expect(addButton.disabled).toBe(false);
+    });
+
+    it('retains the draft and re-enables Add when saving fails', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      const held = holdAction(background, 'notes.add');
+      await typeAndAdd('Keep me');
+      held[0].release({ ok: false, error: 'boom' });
+      for (let i = 0; i < 5; i += 1) await flushAsyncWork();
+
+      expect(popup().querySelector('.ljm-notes-draft textarea').value).toBe('Keep me');
+      expect(popup().querySelector('.ljm-notes-add').disabled).toBe(false);
+      expect(popup().querySelector('.ljm-notes-status').textContent).toBe('Notes request failed: boom');
+    });
+
+    it('blocks repeated saves of an edit and keeps text typed while saving', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      await typeAndAdd('Original');
+      const id = background.notes[0].id;
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Edit').click();
+      const editor = popup().querySelector('.ljm-notes-entry textarea');
+      editor.value = 'Saved text';
+      const held = holdAction(background, 'notes.update');
+
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Save').click();
+      await flushAsyncWork();
+      const pendingSave = buttonIn(popup().querySelector('.ljm-notes-entry'), 'Save');
+      expect(pendingSave.disabled).toBe(true);
+      pendingSave.click();
+      await flushAsyncWork();
+      expect(held).toHaveLength(1);
+
+      editor.value = 'Saved text, then more';
+      held[0].release();
+      for (let i = 0; i < 5; i += 1) await flushAsyncWork();
+
+      expect(background.notes[0].text).toBe('Saved text');
+      const reopened = popup().querySelector(`[data-note-id="${id}"] textarea`);
+      expect(reopened.value).toBe('Saved text, then more');
+      expect(getNotesPopupState().editors.get(id).note.text).toBe('Saved text');
+    });
+
+    it('allows only one delete request per entry', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      await typeAndAdd('Goes');
+      const held = holdAction(background, 'notes.delete');
+
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Delete').click();
+      await flushAsyncWork();
+      expect(buttonIn(popup().querySelector('.ljm-notes-entry'), 'Delete').disabled).toBe(true);
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Delete').click();
+      held[0].release();
+      for (let i = 0; i < 5; i += 1) await flushAsyncWork();
+
+      expect(held).toHaveLength(1);
+      expect(entries()).toHaveLength(0);
+    });
+  });
+
+  describe('cancelling an edit', () => {
+    it('cancels a clean edit without asking', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      await typeAndAdd('Original');
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Edit').click();
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Cancel').click();
+
+      expect(window.confirm).not.toHaveBeenCalled();
+      expect(entries()[0].text).toBe('Original');
+    });
+
+    it('asks before cancelling a dirty edit and keeps it when declined', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      await typeAndAdd('Original');
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Edit').click();
+      popup().querySelector('.ljm-notes-entry textarea').value = 'Unsaved';
+      window.confirm = vi.fn(() => false);
+
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Cancel').click();
+      expect(window.confirm).toHaveBeenCalledWith('Discard unsaved note changes?');
+      expect(popup().querySelector('.ljm-notes-entry textarea').value).toBe('Unsaved');
+
+      window.confirm = vi.fn(() => true);
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Cancel').click();
+      expect(entries()[0].text).toBe('Original');
+    });
+  });
+
+  describe('stale responses', () => {
+    it('ignores an older list response that arrives after a newer one', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      const held = holdAction(background, 'notes.listGroup');
+
+      const older = refreshNotesPopup();
+      const newer = refreshNotesPopup();
+      await flushAsyncWork();
+      held[1].release({ ok: true, notes: [{ id: 'new', text: 'Newer', linkedInJobId: '111', createdAt: 2, updatedAt: 2 }] });
+      await newer;
+      held[0].release({ ok: true, notes: [] });
+      await older;
+
+      expect(entries().map((entry) => entry.text)).toEqual(['Newer']);
+    });
+
+    it('ignores an older marker pass that resolves after a newer one', async () => {
+      const card = makeCard();
+      const held = holdAction(background, 'notes.groupsWithNotes');
+
+      const older = markCardNotes();
+      const newer = markCardNotes();
+      await flushAsyncWork();
+      held[1].release({ ok: true, matches: [false] });
+      await newer;
+      held[0].release({ ok: true, matches: [true] });
+      await older;
+
+      expect(card.querySelector('[data-ljm-notes]')).toBeNull();
+    });
+
+    it('does not mark a recycled card that shows another job when the response arrives', async () => {
+      const card = makeCard({ jobId: '111' });
+      const held = holdAction(background, 'notes.groupsWithNotes');
+
+      const pass = markCardNotes();
+      await flushAsyncWork();
+      card.dataset.jobId = '222';
+      card.querySelector('a').href = '/jobs/view/222';
+      card.querySelector('a').textContent = 'Different Role';
+      held[0].release({ ok: true, matches: [true] });
+      await pass;
+
+      expect(card.querySelector('[data-ljm-notes]')).toBeNull();
+    });
+  });
+
+  describe('company identity', () => {
+    function detailTitle(jobId) {
+      const link = document.createElement('a');
+      link.href = `/jobs/view/${jobId}`;
+      return link;
+    }
+
+    function adapterWith(overrides) {
+      return { ...defaultJobsAdapter, ...overrides };
+    }
+
+    it('uses a slug from a company link inside the card', () => {
+      const card = makeCard();
+      const adapter = adapterWith({ getCompanySlug: () => 'acme-corp' });
+
+      expect(getCardNoteContext(card, adapter).companySlug).toBe('acme-corp');
+    });
+
+    it('uses the detail-panel slug only for the selected and rendered job with the same company', () => {
+      const card = makeCard({ jobId: '111', company: 'Acme  Corp' });
+      const adapter = adapterWith({
+        getCurrentJobId: () => '111',
+        getDetailPanelTitleElement: () => detailTitle('111'),
+        getDetailPanelCompany: () => ({ name: 'acme corp', slug: 'acme-corp-uk' }),
+      });
+
+      expect(getCardNoteContext(card, adapter).companySlug).toBe('acme-corp-uk');
+    });
+
+    it.each([
+      ['another job is selected', { getCurrentJobId: () => '999' }],
+      ['the panel still renders the previous job', { getDetailPanelTitleElement: () => detailTitle('999') }],
+      ['the panel company name differs', { getDetailPanelCompany: () => ({ name: 'Acme Holdings', slug: 'acme-holdings' }) }],
+    ])('ignores the detail-panel slug when %s', (_label, override) => {
+      const card = makeCard({ jobId: '111' });
+      const adapter = adapterWith({
+        getCurrentJobId: () => '111',
+        getDetailPanelTitleElement: () => detailTitle('111'),
+        getDetailPanelCompany: () => ({ name: 'Acme Corp', slug: 'acme-corp-uk' }),
+        ...override,
+      });
+
+      expect(getCardNoteContext(card, adapter).companySlug).toBeNull();
+    });
+
+    it('never takes a detail-panel slug by company name when the card has no job ID', () => {
+      const card = makeCard({ jobId: null });
+      const adapter = adapterWith({
+        getCurrentJobId: () => null,
+        getDetailPanelTitleElement: () => null,
+        getDetailPanelCompany: () => ({ name: 'Acme Corp', slug: 'acme-corp-uk' }),
+      });
+
+      expect(getCardNoteContext(card, adapter).companySlug).toBeNull();
+    });
+
+    it('sends the captured slug with the add request and group lookup', async () => {
+      const card = makeCard();
+      card.querySelector('a').insertAdjacentHTML('afterend', '<a href="/company/acme-corp/">Acme</a>');
+      defaultJobsAdapter.getCompanySlug = (target) =>
+        target.querySelector('a[href*="/company/"]')?.getAttribute('href').match(/\/company\/([^/]+)/)?.[1] ?? null;
+      try {
+        await rightClickAndSend(card, 'add-note');
+        await typeAndAdd('With slug');
+        await markCardNotes();
+      } finally {
+        delete defaultJobsAdapter.getCompanySlug;
+      }
+
+      const sent = background.sendMessage.mock.calls.map(([m]) => m);
+      expect(sent.find((m) => m.action === 'notes.add').companySlug).toBe('acme-corp');
+      expect(sent.find((m) => m.action === 'notes.groupsWithNotes').groups[0].companySlug).toBe('acme-corp');
     });
   });
 });
