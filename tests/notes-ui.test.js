@@ -751,4 +751,174 @@ describe('card notes UI', () => {
       expect(sent.find((m) => m.action === 'notes.groupsWithNotes').groups[0].companySlug).toBe('acme-corp');
     });
   });
+
+  describe('closing while a write is pending', () => {
+    it('refuses Close and Escape during a pending add and keeps newer text', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      const held = holdAction(background, 'notes.add');
+      await typeAndAdd('A');
+      const draft = popup().querySelector('.ljm-notes-draft textarea');
+      draft.value = 'A then B';
+
+      expect(popup().querySelector('.ljm-notes-close').disabled).toBe(true);
+      expect(closeNotesPopup()).toBe(false);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+      expect(window.confirm).not.toHaveBeenCalled();
+      expect(popup()).not.toBeNull();
+      expect(popup().querySelector('.ljm-notes-status').textContent).toMatch(/^Saving/);
+
+      held[0].release();
+      for (let i = 0; i < 5; i += 1) await flushAsyncWork();
+
+      expect(background.notes.map((note) => note.text)).toEqual(['A']);
+      expect(draft.value).toBe('A then B');
+      expect(popup().querySelector('.ljm-notes-close').disabled).toBe(false);
+      expect(popup().querySelector('.ljm-notes-status').hidden).toBe(true);
+    });
+
+    it('refuses closing during a pending update', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      await typeAndAdd('Original');
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Edit').click();
+      popup().querySelector('.ljm-notes-entry textarea').value = 'Changed';
+      const held = holdAction(background, 'notes.update');
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Save').click();
+      await flushAsyncWork();
+
+      expect(closeNotesPopup()).toBe(false);
+      expect(window.confirm).not.toHaveBeenCalled();
+
+      held[0].release();
+      for (let i = 0; i < 5; i += 1) await flushAsyncWork();
+      expect(closeNotesPopup()).toBe(true);
+      expect(background.notes[0].text).toBe('Changed');
+    });
+
+    it('re-enables the editor when the save succeeds but the list refresh fails', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      await typeAndAdd('Original');
+      const id = background.notes[0].id;
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Edit').click();
+      const editor = popup().querySelector('.ljm-notes-entry textarea');
+      editor.value = 'First save';
+      const heldUpdate = holdAction(background, 'notes.update');
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Save').click();
+      await flushAsyncWork();
+      editor.value = 'First save plus more';
+      const heldList = holdAction(background, 'notes.listGroup');
+      heldUpdate[0].release();
+      for (let i = 0; i < 3; i += 1) await flushAsyncWork();
+      heldList[0].release({ ok: false, error: 'offline' });
+      for (let i = 0; i < 3; i += 1) await flushAsyncWork();
+
+      const entry = popup().querySelector(`[data-note-id="${id}"]`);
+      expect(buttonIn(entry, 'Save').disabled).toBe(false);
+      expect(buttonIn(entry, 'Cancel').disabled).toBe(false);
+      expect(entry.querySelector('textarea').value).toBe('First save plus more');
+      expect(isNotesPopupDirty()).toBe(true);
+    });
+  });
+
+  describe('body replacement', () => {
+    it('re-attaches a dirty popup to a replaced body without duplicating listeners', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      const draft = popup().querySelector('.ljm-notes-draft textarea');
+      draft.value = 'Typed before navigation';
+
+      document.documentElement.replaceChild(document.createElement('body'), document.body);
+      expect(popup()).toBeNull();
+      makeCard();
+      await markCardNotes();
+
+      expect(popup().parentElement).toBe(document.body);
+      expect(popup().querySelector('.ljm-notes-draft textarea')).toBe(draft);
+      expect(draft.value).toBe('Typed before navigation');
+
+      window.confirm = vi.fn(() => false);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(window.confirm).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows a detached popup again before asking to discard it', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      popup().querySelector('.ljm-notes-draft textarea').value = 'Typed';
+      document.documentElement.replaceChild(document.createElement('body'), document.body);
+      let visibleWhenAsked = null;
+      window.confirm = vi.fn(() => { visibleWhenAsked = !!popup(); return false; });
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+      expect(visibleWhenAsked).toBe(true);
+    });
+  });
+
+  describe('editor focus', () => {
+    async function openEditorWithSelection() {
+      await rightClickAndSend(makeCard(), 'add-note');
+      await typeAndAdd('Original text');
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Edit').click();
+      const editor = popup().querySelector('.ljm-notes-entry textarea');
+      editor.value = 'Edited text';
+      editor.focus();
+      editor.setSelectionRange(2, 6);
+      return editor;
+    }
+
+    it('keeps focus and caret when another change refreshes the list', async () => {
+      const editor = await openEditorWithSelection();
+      const { note } = await background.sendMessage({
+        action: 'notes.add', linkedInJobId: '111', title: 'Senior Engineer', company: 'Acme Corp', text: 'Other tab',
+      });
+      await sendContentMessage({ action: 'data-changed', notes: [note] });
+
+      expect(entries()).toHaveLength(2);
+      expect(document.activeElement).toBe(editor);
+      expect([editor.selectionStart, editor.selectionEnd]).toEqual([2, 6]);
+    });
+
+    it('keeps focus and caret while a save is pending', async () => {
+      const editor = await openEditorWithSelection();
+      const held = holdAction(background, 'notes.update');
+      updateNoteFromEditor(background.notes[0].id);
+      await flushAsyncWork();
+
+      expect(document.activeElement).toBe(editor);
+      expect([editor.selectionStart, editor.selectionEnd]).toEqual([2, 6]);
+      held[0].release();
+      for (let i = 0; i < 5; i += 1) await flushAsyncWork();
+    });
+  });
+
+  describe('status messages', () => {
+    it('clears a request error after a later successful refresh', async () => {
+      await rightClickAndSend(makeCard(), 'show-notes');
+      const held = holdAction(background, 'notes.listGroup');
+      const failed = refreshNotesPopup();
+      await flushAsyncWork();
+      held[0].release({ ok: false, error: 'offline' });
+      await failed;
+      expect(popup().querySelector('.ljm-notes-status').textContent).toBe('Notes request failed: offline');
+
+      const succeeded = refreshNotesPopup();
+      await flushAsyncWork();
+      held[1].release();
+      await succeeded;
+
+      expect(popup().querySelector('.ljm-notes-status').hidden).toBe(true);
+    });
+
+    it('keeps a validation notice across a successful refresh', async () => {
+      await rightClickAndSend(makeCard(), 'add-note');
+      await typeAndAdd('Existing');
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Edit').click();
+      popup().querySelector('.ljm-notes-entry textarea').value = ' ';
+      buttonIn(popup().querySelector('.ljm-notes-entry'), 'Save').click();
+      await refreshNotesPopup();
+
+      expect(popup().querySelector('.ljm-notes-status').textContent).toBe(
+        'A note cannot be empty; use Delete to remove it.',
+      );
+    });
+  });
 });

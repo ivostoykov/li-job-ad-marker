@@ -3,6 +3,8 @@ const NOTES_POPUP_MARGIN = 8;
 const NOTE_MARKER_ATTRIBUTE = "data-ljm-notes";
 const NOTES_DISCARD_PROMPT = "Discard unsaved note changes?";
 const NOTES_DELETE_PROMPT = "Delete this note?";
+const NOTES_SAVING_STATUS = "Saving\u2026";
+const NOTES_CLOSE_PENDING_STATUS = "Saving\u2026 the notes can be closed once it finishes.";
 const NOTES_ERROR_MESSAGES = {
   incognito: "Notes cannot be saved in a private window.",
 };
@@ -53,9 +55,24 @@ function isNotesPopupDirty(state = notesPopupState) {
   );
 }
 
+function isNotesWritePending(state = notesPopupState) {
+  if (!state) return false;
+  return (
+    state.addPending ||
+    state.pendingDeletes.size > 0 ||
+    [...state.editors.values()].some(({ pending }) => pending)
+  );
+}
+
 function closeNotesPopup({ force = false } = {}) {
   const state = notesPopupState;
   if (!state) return true;
+  if (!state.popup.isConnected && document.body)
+    document.body.appendChild(state.popup);
+  if (!force && isNotesWritePending(state)) {
+    showNotesStatus(NOTES_CLOSE_PENDING_STATUS, state, "pending");
+    return false;
+  }
   if (!force && isNotesPopupDirty(state) && !window.confirm(NOTES_DISCARD_PROMPT))
     return false;
 
@@ -87,16 +104,19 @@ function positionNotesPopup(state = notesPopupState) {
   popup.style.top = `${Math.min(Math.max(anchorRect.top, NOTES_POPUP_MARGIN), maxTop)}px`;
 }
 
-function showNotesStatus(text, state = notesPopupState) {
+function showNotesStatus(text, state = notesPopupState, kind = "notice") {
   if (!state) return;
   state.status.textContent = text || "";
   state.status.hidden = !text;
+  state.status.dataset.kind = text ? kind : "";
+  state.closeButton.disabled = isNotesWritePending(state);
 }
 
 function showNotesError(error, state = notesPopupState) {
   showNotesStatus(
     NOTES_ERROR_MESSAGES[error] || `Notes request failed: ${error}`,
     state,
+    "error",
   );
 }
 
@@ -153,7 +173,7 @@ function buildNotesPopup(context) {
   list.className = "ljm-notes-list";
 
   popup.append(header, status, draftSection, list);
-  return { popup, status, draft, addButton, list };
+  return { popup, status, closeButton, draft, addButton, list };
 }
 
 function buildNoteEntry(note, state) {
@@ -237,6 +257,17 @@ function renderNotesList(notes, state = notesPopupState) {
     if (!activeIds.has(id)) state.editors.delete(id);
   });
 
+  // Re-inserting a kept editor textarea drops its focus and caret.
+  const active = document.activeElement;
+  const focused =
+    active instanceof HTMLTextAreaElement && state.list.contains(active)
+      ? {
+          textarea: active,
+          start: active.selectionStart,
+          end: active.selectionEnd,
+        }
+      : null;
+
   if (!notes.length) {
     const empty = document.createElement("li");
     empty.className = "ljm-notes-empty";
@@ -246,6 +277,10 @@ function renderNotesList(notes, state = notesPopupState) {
     state.list.replaceChildren(
       ...notes.map((note) => buildNoteEntry(note, state)),
     );
+  }
+  if (focused?.textarea.isConnected) {
+    focused.textarea.focus();
+    focused.textarea.setSelectionRange(focused.start, focused.end);
   }
   positionNotesPopup(state);
 }
@@ -266,6 +301,7 @@ async function refreshNotesPopup(state = notesPopupState) {
     showNotesError(response?.error ?? "no response", state);
     return;
   }
+  if (state.status.dataset.kind === "error") showNotesStatus("", state);
   renderNotesList(response.notes ?? [], state);
 }
 
@@ -277,6 +313,7 @@ async function addNoteFromDraft(state = notesPopupState) {
 
   state.addPending = true;
   state.addButton.disabled = true;
+  showNotesStatus(NOTES_SAVING_STATUS, state, "pending");
   const { linkedInJobId, title, company, companySlug } = state.context;
   const response = await chrome.runtime.sendMessage({
     action: "notes.add",
@@ -288,6 +325,7 @@ async function addNoteFromDraft(state = notesPopupState) {
   }).catch((e) => ({ ok: false, error: e?.message || String(e) }));
   state.addPending = false;
   state.addButton.disabled = false;
+  showNotesStatus("", state);
   if (notesPopupState !== state) return;
   if (!response?.ok) {
     showNotesError(response?.error ?? "no response", state);
@@ -295,7 +333,6 @@ async function addNoteFromDraft(state = notesPopupState) {
   }
 
   if (state.draft.value.trim() === text) state.draft.value = "";
-  showNotesStatus("", state);
   await refreshNotesPopup(state);
 }
 
@@ -311,12 +348,14 @@ async function updateNoteFromEditor(id, state = notesPopupState) {
 
   editor.pending = true;
   renderNotesList(state.notes, state);
+  showNotesStatus(NOTES_SAVING_STATUS, state, "pending");
   const response = await chrome.runtime.sendMessage({
     action: "notes.update",
     id,
     text,
   }).catch((e) => ({ ok: false, error: e?.message || String(e) }));
   editor.pending = false;
+  showNotesStatus("", state);
   if (notesPopupState !== state) return;
   if (!response?.ok) {
     renderNotesList(state.notes, state);
@@ -324,9 +363,11 @@ async function updateNoteFromEditor(id, state = notesPopupState) {
     return;
   }
 
-  editor.note = response.note;
   if (editor.textarea.value.trim() === text) state.editors.delete(id);
-  showNotesStatus("", state);
+  renderNotesList(
+    state.notes.map((note) => (note.id === id ? response.note : note)),
+    state,
+  );
   await refreshNotesPopup(state);
 }
 
@@ -336,11 +377,13 @@ async function deleteNoteEntry(id, state = notesPopupState) {
 
   state.pendingDeletes.add(id);
   renderNotesList(state.notes, state);
+  showNotesStatus(NOTES_SAVING_STATUS, state, "pending");
   const response = await chrome.runtime.sendMessage({
     action: "notes.delete",
     id,
   }).catch((e) => ({ ok: false, error: e?.message || String(e) }));
   state.pendingDeletes.delete(id);
+  showNotesStatus("", state);
   if (notesPopupState !== state) return;
   renderNotesList(state.notes, state);
   if (!response?.ok) {
@@ -349,7 +392,6 @@ async function deleteNoteEntry(id, state = notesPopupState) {
   }
 
   state.editors.delete(id);
-  showNotesStatus("", state);
   await refreshNotesPopup(state);
 }
 
@@ -409,6 +451,10 @@ function clearCardNoteMarkers(root = document) {
 }
 
 async function markCardNotes() {
+  // LinkedIn can replace document.body; keep the open popup and its drafts.
+  if (notesPopupState && !notesPopupState.popup.isConnected && document.body)
+    document.body.appendChild(notesPopupState.popup);
+
   const adapter = currentPageAdapter;
   if (!enabled || !adapter) return;
 
