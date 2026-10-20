@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0] - 2026-10-20
+
+### Added
+- Independent card notes grouped by title and company, with original job ID and creation time, missing-ID support and confirmation before discarding unsaved changes
+- Company-profile blacklist marking and opportunistic company-slug capture
+- Complete version 2 backups, including notes and deleted records, without requiring a LinkedIn tab
+- Per-company blacklist sync with conflict resolution and a visible warning when sync is unavailable
+
+### Changed
+- Jobs, companies and notes now live in extension-owned IndexedDB behind the background data API
+- Record metadata supports stable IDs, creation/update timestamps and soft deletion
+- Legacy job migration acknowledges committed records before removing unchanged source records; the legacy blacklist remains available during the compatibility transition
+- Imported version 2 records use newer-update-wins merging; older backup files remain supported
+
+### Fixed
+- Invalid imported colours and boolean settings fall back to safe defaults in legacy settings paths
+- Disabling the marker clears unwanted-title styling from the detail panel
+- Unwanted-title tests now cover matched-rule strings, exact matches and badge cleanup
+
 ## [1.1.72] - 2026-04-20
 
 ### Added
