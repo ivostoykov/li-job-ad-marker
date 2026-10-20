@@ -100,12 +100,16 @@ globalThis.indexedDB = {
   },
 };
 
+const runtimeMessageListeners = [];
+globalThis.__runtimeMessageListeners = runtimeMessageListeners;
+
 // Chrome API mock — must be set before any source script is evaluated
 globalThis.chrome = {
   runtime: {
     getManifest: () => ({ name: 'LJM Test', version: '0.0.0' }),
     getURL: (path) => `chrome-extension://test/${path}`,
-    onMessage: { addListener: () => {} },
+    onMessage: { addListener: (listener) => runtimeMessageListeners.push(listener) },
+    sendMessage: () => Promise.resolve({ ok: true }),
   },
   storage: {
     sync: {
@@ -133,6 +137,7 @@ const sourceFiles = [
   'src/js/blacklist.js',
   'src/js/log.js',
   'src/content.js',
+  'src/js/notes-ui.js',
 ];
 
 const combined =
@@ -169,6 +174,8 @@ const combined =
     },
     applyStartupOptions: (options) => applyStartupOptions(options),
     isDebugEnabled: () => debugEnabled,
+    getNotesPopupState: () => notesPopupState,
+    setMarkerEnabled: (value) => { enabled = value; },
   };`;
 
 // Indirect eval → runs as a non-strict global Script so that function

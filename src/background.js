@@ -7,6 +7,8 @@ const MENU_MARKER_TOGGLE = 'marker-toggle';
 const MENU_APPLIED_MARK = 'applied-mark';
 const MENU_IGNORE_TITLE = 'ignore-title';
 const MENU_IGNORE_SELECTION = 'ignore-selection';
+const MENU_ADD_NOTE = 'add-note';
+const MENU_SHOW_NOTES = 'show-notes';
 const MENU_OPTIONS = 'options';
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -47,6 +49,20 @@ chrome.runtime.onInstalled.addListener(() => {
     });
 
     chrome.contextMenus.create({
+      id: MENU_ADD_NOTE,
+      title: 'Add note',
+      contexts: ['page', 'link'],
+      documentUrlPatterns: ['https://www.linkedin.com/*'],
+    });
+
+    chrome.contextMenus.create({
+      id: MENU_SHOW_NOTES,
+      title: 'Show notes',
+      contexts: ['page', 'link'],
+      documentUrlPatterns: ['https://www.linkedin.com/*'],
+    });
+
+    chrome.contextMenus.create({
       id: 'separatorBeforeOptions',
       type: 'separator',
       contexts: ['page', 'link'],
@@ -70,6 +86,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   if ([MENU_BLACKLIST_TOGGLE, MENU_MARKER_TOGGLE, MENU_APPLIED_MARK, MENU_IGNORE_TITLE].includes(info.menuItemId)) {
     chrome.tabs.sendMessage(tab.id, { action: info.menuItemId });
+  }
+
+  if ([MENU_ADD_NOTE, MENU_SHOW_NOTES].includes(info.menuItemId)) {
+    chrome.tabs.sendMessage(tab.id, { action: info.menuItemId }, { frameId: info.frameId });
   }
 
   if (info.menuItemId === MENU_IGNORE_SELECTION) {

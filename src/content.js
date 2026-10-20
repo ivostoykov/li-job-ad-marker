@@ -689,6 +689,7 @@ async function markPage() {
     markCards(),
     markDetailPanelAging(),
     markDetailPanelUnwantedTitle(),
+    markCardNotes(),
   ]);
 }
 
