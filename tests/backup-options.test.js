@@ -21,6 +21,10 @@ async function openBackupOptions(respond) {
       sendMessage: async (message) => {
         messages.push(message);
         if (message.action === 'sync.status') return { ok: true, status: { mirror: 'ok' } };
+        if (message.action === 'settings.set') {
+          await window.chrome.storage.sync.set({ 'ljm-options': window.normaliseOptions(message.options) });
+          return { ok: true };
+        }
         return respond(message, (value) => { stored = value; });
       }
     },

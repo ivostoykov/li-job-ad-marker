@@ -23,9 +23,11 @@
         "src/js/db.js",
         "src/js/blacklist.js",
         "src/js/log.js",
-        "src/content.js"
+        "src/content.js",
+        "src/js/notes-ui.js",
+        "src/js/profile.js"
       ],
-      "css": ["src/css/marker.css"],
+      "css": ["src/css/marker.css", "src/css/notes.css"],
       "all_frames": true,
       "run_at": "document_start"
     }

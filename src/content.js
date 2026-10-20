@@ -753,7 +753,7 @@ async function markPage() {
     markDetailPanelAging(),
     markDetailPanelUnwantedTitle(),
     captureDetailPanelCompanySlug(),
-    markCardNotes(),
+    typeof markCardNotes === "function" ? markCardNotes() : undefined,
   ]);
 }
 

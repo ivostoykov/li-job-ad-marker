@@ -23,6 +23,7 @@ const storageListeners = [];
 const sentMessages = [];
 
 function installChromeStorage() {
+  blSetCache([]);
   sentMessages.length = 0;
   storageData.blacklistedCompanies = [];
   storageData['ljm-options'] = undefined;
@@ -172,7 +173,7 @@ describe('company profile marking', () => {
   });
 
   it('matches by name fallback against the stored blacklist', async () => {
-    storageData.blacklistedCompanies = ['Acme Corp'];
+    blSetCache([{ id: 'acme', name: 'Acme Corp', nameKey: 'acme corp', slug: null }]);
     const heading = makeProfileHeading('Acme Corp');
 
     await initCompanyProfileMarker();
@@ -200,12 +201,12 @@ describe('company profile marking', () => {
   });
 
   it('removes the stale classes when the company is unblacklisted', async () => {
-    storageData.blacklistedCompanies = ['Acme Corp'];
+    blSetCache([{ id: 'acme', name: 'Acme Corp', nameKey: 'acme corp', slug: null }]);
     const heading = makeProfileHeading('Acme Corp');
     await initCompanyProfileMarker();
     expect(heading.classList.contains('ljm-blacklisted-company')).toBe(true);
 
-    storageData.blacklistedCompanies = [];
+    blSetCache([]);
     emitBlacklistChange([]);
     await wait(350);
 

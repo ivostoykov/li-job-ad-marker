@@ -104,6 +104,8 @@ export class SyncArea extends StorageArea {
 
 export function createDevice({ sync = new SyncArea(), local = new StorageArea('local'), indexedDB = new IDBFactory(), deliverToTab = null } = {}) {
   const runtimeListeners = [];
+  const menuListeners = {};
+  const menuItems = [];
   const pageMessages = [];
   const tabMessages = [];
 
@@ -119,15 +121,19 @@ export function createDevice({ sync = new SyncArea(), local = new StorageArea('l
         getManifest: () => ({ name: 'LJM Test', version: '9.9.9' }),
         getURL: (path) => `chrome-extension://test/${path}`,
         onMessage: { addListener: (listener) => runtimeListeners.push(listener) },
-        onInstalled: { addListener() {} },
+        onInstalled: { addListener(listener) { menuListeners.installed = listener; } },
         sendMessage: async (message) => { pageMessages.push(clone(message)); },
       },
-      contextMenus: { onClicked: { addListener() {} }, removeAll() {}, create() {} },
+      contextMenus: {
+        onClicked: { addListener(listener) { menuListeners.clicked = listener; } },
+        removeAll(callback) { menuItems.length = 0; callback?.(); },
+        create(item) { menuItems.push(clone(item)); },
+      },
       tabs: {
         create() {},
         query: async () => (deliverToTab ? [{ id: 1, incognito: false }] : []),
-        sendMessage: async (tabId, message) => {
-          tabMessages.push({ tabId, message: clone(message) });
+        sendMessage: async (tabId, message, options) => {
+          tabMessages.push({ tabId, message: clone(message), options: clone(options) });
           deliverToTab?.(clone(message));
         },
       },
@@ -153,6 +159,8 @@ export function createDevice({ sync = new SyncArea(), local = new StorageArea('l
     indexedDB,
     pageMessages,
     tabMessages,
+    menuItems,
+    menuListeners,
     ready: () => vm.runInContext('ensureDataReady()', context),
     send(message, sender = { tab: { id: 1, incognito: false } }) {
       return new Promise((resolvePromise) => {
