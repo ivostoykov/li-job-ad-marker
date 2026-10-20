@@ -35,14 +35,14 @@ function makeCard({ titleClass = 'job-card-container__link', hasState = false, h
 describe('applyMark', () => {
   it('adds ljm-viewed class for viewed state', () => {
     const card = makeCard();
-    applyMark(card, 'viewed', false, false, false, defaultJobsAdapter);
+    applyMark(card, 'viewed', false, false, null, undefined, defaultJobsAdapter);
     expect(card.classList.contains('ljm-viewed')).toBe(true);
     expect(card.classList.contains('ljm-applied')).toBe(false);
   });
 
   it('adds ljm-applied and title/state classes for applied state', () => {
     const card = makeCard({ hasState: true });
-    applyMark(card, 'applied', false, false, false, defaultJobsAdapter);
+    applyMark(card, 'applied', false, false, null, undefined, defaultJobsAdapter);
     expect(card.classList.contains('ljm-applied')).toBe(true);
     const titleEl = defaultJobsAdapter.getTitleElement(card);
     expect(titleEl.classList.contains('ljm-applied-title')).toBe(true);
@@ -50,7 +50,7 @@ describe('applyMark', () => {
 
   it('adds ljm-blacklisted and company class when blacklisted', () => {
     const card = makeCard();
-    applyMark(card, null, true, false, false, defaultJobsAdapter);
+    applyMark(card, null, true, false, null, undefined, defaultJobsAdapter);
     expect(card.classList.contains('ljm-blacklisted')).toBe(true);
     const company = card.querySelector('.artdeco-entity-lockup__subtitle');
     expect(company.classList.contains('ljm-blacklisted-company')).toBe(true);
@@ -58,21 +58,21 @@ describe('applyMark', () => {
 
   it('adds ljm-ageing to the time element when ageing', () => {
     const card = makeCard({ hasAgeing: true });
-    applyMark(card, null, false, true, false, defaultJobsAdapter);
+    applyMark(card, null, false, true, null, undefined, defaultJobsAdapter);
     const time = card.querySelector('time');
     expect(time.classList.contains('ljm-ageing')).toBe(true);
   });
 
   it('adds ljm-unwanted-title to the title element', () => {
     const card = makeCard();
-    applyMark(card, null, false, false, true, defaultJobsAdapter);
+    applyMark(card, null, false, false, 'Engineer', undefined, defaultJobsAdapter);
     const titleEl = defaultJobsAdapter.getTitleElement(card);
     expect(titleEl.classList.contains('ljm-unwanted-title')).toBe(true);
   });
 
   it('stacks viewed and unwanted-title independently', () => {
     const card = makeCard();
-    applyMark(card, 'viewed', false, false, true, defaultJobsAdapter);
+    applyMark(card, 'viewed', false, false, 'Engineer', undefined, defaultJobsAdapter);
     expect(card.classList.contains('ljm-viewed')).toBe(true);
     const titleEl = defaultJobsAdapter.getTitleElement(card);
     expect(titleEl.classList.contains('ljm-unwanted-title')).toBe(true);
@@ -80,7 +80,7 @@ describe('applyMark', () => {
 
   it('stacks applied and unwanted-title independently', () => {
     const card = makeCard();
-    applyMark(card, 'applied', false, false, true, defaultJobsAdapter);
+    applyMark(card, 'applied', false, false, 'Engineer', undefined, defaultJobsAdapter);
     expect(card.classList.contains('ljm-applied')).toBe(true);
     const titleEl = defaultJobsAdapter.getTitleElement(card);
     expect(titleEl.classList.contains('ljm-unwanted-title')).toBe(true);
@@ -89,7 +89,7 @@ describe('applyMark', () => {
 
   it('stacks blacklisted and unwanted-title independently', () => {
     const card = makeCard();
-    applyMark(card, null, true, false, true, defaultJobsAdapter);
+    applyMark(card, null, true, false, 'Engineer', undefined, defaultJobsAdapter);
     expect(card.classList.contains('ljm-blacklisted')).toBe(true);
     const titleEl = defaultJobsAdapter.getTitleElement(card);
     expect(titleEl.classList.contains('ljm-unwanted-title')).toBe(true);
@@ -99,9 +99,11 @@ describe('applyMark', () => {
 describe('clearCardMarks', () => {
   it('removes all mark classes from the card and its elements', () => {
     const card = makeCard({ hasAgeing: true });
-    applyMark(card, 'applied', true, true, true, defaultJobsAdapter);
+    applyMark(card, 'applied', true, true, 'Engineer', undefined, defaultJobsAdapter);
 
+    expect(card.dataset.ljmIgnoredRule).toBe('Engineer');
     clearCardMarks(card, defaultJobsAdapter);
+    expect(card.hasAttribute('data-ljm-ignored-rule')).toBe(false);
 
     expect(card.classList.contains('ljm-applied')).toBe(false);
     expect(card.classList.contains('ljm-viewed')).toBe(false);
@@ -121,5 +123,16 @@ describe('clearCardMarks', () => {
   it('is idempotent on a card with no marks', () => {
     const card = makeCard();
     expect(() => clearCardMarks(card, defaultJobsAdapter)).not.toThrow();
+  });
+});
+
+describe('ignored badge refresh', () => {
+  it('strips exact-rule prefix and clears stale badges when no rule matches', () => {
+    const card = makeCard();
+    applyMark(card, null, false, false, '=Engineer', undefined, defaultJobsAdapter);
+    expect(card.dataset.ljmIgnoredRule).toBe('Engineer');
+    applyMark(card, null, false, false, null, undefined, defaultJobsAdapter);
+    expect(card.hasAttribute('data-ljm-ignored-rule')).toBe(false);
+    expect(defaultJobsAdapter.getTitleElement(card).classList.contains('ljm-unwanted-title')).toBe(false);
   });
 });

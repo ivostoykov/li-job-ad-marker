@@ -26,18 +26,28 @@ function getValidAgeingLimitDays(options) {
   return value >= 1 && value <= 7 ? value : null;
 }
 
+function normaliseOptions(options) {
+  const colours = options?.colours;
+  const validColour = (value) => typeof value === 'string' && value.length === 7 && /^#[0-9a-f]{6}$/i.test(value);
+  return {
+    debug: typeof options?.debug === 'boolean' ? options.debug : SETTINGS_DEFAULTS.debug,
+    ageingLimitDays: normaliseAgeingLimitDays(options?.ageingLimitDays),
+    treatPromotedAsViewed: typeof options?.treatPromotedAsViewed === 'boolean'
+      ? options.treatPromotedAsViewed : SETTINGS_DEFAULTS.treatPromotedAsViewed,
+    unwantedTitleWords: typeof options?.unwantedTitleWords === 'string' ? options.unwantedTitleWords : '',
+    colours: {
+      viewed: typeof colours?.viewed === 'number' && Number.isFinite(colours.viewed)
+        && colours.viewed >= 0 && colours.viewed <= 1 ? colours.viewed : SETTINGS_DEFAULTS.colours.viewed,
+      applied: validColour(colours?.applied) ? colours.applied : SETTINGS_DEFAULTS.colours.applied,
+      blacklisted: validColour(colours?.blacklisted) ? colours.blacklisted : SETTINGS_DEFAULTS.colours.blacklisted
+    }
+  };
+}
+
 function getOptions() {
-  return chrome.storage.sync.get(SETTINGS_KEY).then((result) => {
-    const stored = result[SETTINGS_KEY] ?? {};
-    return {
-      ...SETTINGS_DEFAULTS,
-      ...stored,
-      ageingLimitDays: normaliseAgeingLimitDays(stored.ageingLimitDays),
-      colours: { ...SETTINGS_DEFAULTS.colours, ...(stored.colours ?? {}) }
-    };
-  });
+  return chrome.storage.sync.get(SETTINGS_KEY).then((result) => normaliseOptions(result[SETTINGS_KEY]));
 }
 
 function setOptions(options) {
-  return chrome.storage.sync.set({ [SETTINGS_KEY]: options });
+  return chrome.storage.sync.set({ [SETTINGS_KEY]: normaliseOptions(options) });
 }
