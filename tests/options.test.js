@@ -23,7 +23,11 @@ async function openOptions(stored) {
   };
   const background = createDevice({ sync });
   window.chrome = {
-    runtime: { getManifest: () => ({ name: 'Test', version: '1' }), sendMessage: (message) => background.send(message) },
+    runtime: {
+      getManifest: () => ({ name: 'Test', version: '1' }),
+      onMessage: { addListener: () => {} },
+      sendMessage: (message) => background.send(message)
+    },
     storage: { sync }
   };
   for (const file of ['src/js/settings.js', 'src/js/options.js']) {
@@ -51,7 +55,7 @@ describe('options page settings paths', () => {
     expect(doc.getElementById('message').textContent).toBe('Saved.');
   });
 
-  it('imports malformed colours and booleans using defaults before storing or populating the form', async () => {
+  it('reloads the background-normalised settings after a legacy import through the real background', async () => {
     const { window, writes } = await openOptions({});
     const doc = window.document;
     let fileInput;
@@ -63,9 +67,9 @@ describe('options page settings paths', () => {
     };
     window.FileReader = class {
       readAsText() {
-        this.result = JSON.stringify({ options: { debug: 'false', treatPromotedAsViewed: [],
+        this.result = JSON.stringify({ version: '1.1.72', blacklist: [], options: { debug: 'false', treatPromotedAsViewed: [],
           unwantedTitleWords: ['bad'], colours: { viewed: '0.1', applied: '#abc', blacklisted: '#123456; } body { color:red' } } });
-        this.onloadend();
+        this.onload();
       }
     };
     doc.getElementById('btn-import').click();
