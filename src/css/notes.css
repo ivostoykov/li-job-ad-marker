@@ -1,0 +1,108 @@
+[data-ljm-notes]::after {
+  content: "\270E";
+  display: inline-block;
+  margin-left: 0.4em;
+  padding: 0 0.3em;
+  border-radius: 3px;
+  background-color: #1d4ed8;
+  color: #fff !important;
+  font-size: 0.9em;
+  line-height: 1.3;
+  text-decoration: none;
+  pointer-events: none;
+}
+
+.ljm-notes-popup {
+  position: fixed;
+  z-index: 2147483647;
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid #c4c4c4;
+  border-radius: 8px;
+  background-color: #fff;
+  color: #1f1f1f;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+}
+
+.ljm-notes-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ljm-notes-heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ljm-notes-close {
+  border: none;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ljm-notes-status {
+  margin: 8px 0 0;
+  color: #b41e1e;
+}
+
+.ljm-notes-draft {
+  margin-top: 8px;
+}
+
+.ljm-notes-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+
+.ljm-notes-meta {
+  margin: 0 0 4px;
+  color: #5e5e5e;
+  font-size: 12px;
+}
+
+.ljm-notes-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ljm-notes-entry,
+.ljm-notes-empty {
+  padding: 8px 0;
+  border-top: 1px solid #e6e6e6;
+}
+
+.ljm-notes-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ljm-notes-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ljm-notes-popup button:not(.ljm-notes-close) {
+  padding: 2px 10px;
+  border: 1px solid #8c8c8c;
+  border-radius: 4px;
+  background-color: #f3f3f3;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}

@@ -57,6 +57,7 @@ const sourceFiles = [
   'src/js/blacklist.js',
   'src/js/log.js',
   'src/content.js',
+  'src/js/notes-ui.js',
 ];
 
 const combined =
@@ -99,6 +100,8 @@ const combined =
     },
     applyStartupOptions: (options) => applyStartupOptions(options),
     isDebugEnabled: () => debugEnabled,
+    getNotesPopupState: () => notesPopupState,
+    setMarkerEnabled: (value) => { enabled = value; },
   };`;
 
 // Indirect eval → runs as a non-strict global Script so that function

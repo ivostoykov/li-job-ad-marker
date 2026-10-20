@@ -753,6 +753,7 @@ async function markPage() {
     markDetailPanelAging(),
     markDetailPanelUnwantedTitle(),
     captureDetailPanelCompanySlug(),
+    markCardNotes(),
   ]);
 }
 
