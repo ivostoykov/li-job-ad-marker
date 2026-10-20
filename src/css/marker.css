@@ -97,3 +97,7 @@ a[componentkey][href*="currentJobId="][data-ljm-ignored-rule]::after {
   pointer-events: none;
   z-index: 9999;
 }
+
+.ljm-company-profile-name.ljm-blacklisted-company {
+  display: inline-block;
+}
