@@ -142,4 +142,19 @@ describe('complete backup options interface', () => {
     expect(window.document.getElementById('sync-status').textContent).toBe('');
     expect(window.document.getElementById('message').textContent).toBe('Imported.');
   });
+
+  it('prevents import and export during an outstanding Save and reports a failed write', async () => {
+    const { window, messages } = await openBackupOptions(async () => ({ ok: true }));
+    let reject;
+    window.chrome.storage.sync.set = () => new Promise((_resolve, fail) => { reject = fail; });
+    window.document.getElementById('debug').checked = true;
+    window.document.getElementById('btn-save').click();
+    for (const id of ['btn-save', 'btn-export', 'btn-import']) expect(window.document.getElementById(id).disabled).toBe(true);
+    window.document.getElementById('btn-export').click();
+    expect(messages.some((message) => message.action === 'data.export')).toBe(false);
+    reject(new Error('Storage unavailable'));
+    await vi.waitFor(() => expect(window.document.getElementById('message').textContent).toBe('Save failed: Storage unavailable'));
+    for (const id of ['btn-save', 'btn-export', 'btn-import']) expect(window.document.getElementById(id).disabled).toBe(false);
+    expect(window.document.getElementById('debug').checked).toBe(true);
+  });
 });

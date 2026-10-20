@@ -83,10 +83,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-save').addEventListener('click', async () => {
-    const options = normaliseOptions(formToOptions());
-    await setOptions(options);
-    savedOptions = options;
-    showMessage('Saved.', 'success');
+    const buttons = ['btn-save', 'btn-import', 'btn-export'].map((id) => document.getElementById(id));
+    buttons.forEach((button) => { button.disabled = true; });
+    try {
+      const options = normaliseOptions(formToOptions());
+      await setOptions(options);
+      savedOptions = options;
+      showMessage('Saved.', 'success');
+    } catch (err) {
+      showMessage(`Save failed: ${err.message}`, 'error');
+    } finally {
+      buttons.forEach((button) => { button.disabled = false; });
+    }
   });
 
   document.getElementById('btn-cancel').addEventListener('click', () => {
