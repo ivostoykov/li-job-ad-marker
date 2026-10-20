@@ -19,6 +19,12 @@ let companyProfileRefreshToken = 0;
 let companyProfileMarkedHeading = null;
 let companyProfileAttachedName = null;
 let companyProfileAttachedSlug = null;
+let companyProfileRoutePath = null;
+let companyProfileLastIdentity = null;
+let companyProfileHeadingAtRouteChange = null;
+let companyProfileRouteChangePending = false;
+let companyProfileBlOnChangeListener = null;
+let companyProfileBlOnChangeUnsubscribe = null;
 
 function getCompanyProfileSlug(pathname = location.pathname) {
   const match = String(pathname ?? "").match(COMPANY_PROFILE_PATH_RE);
@@ -51,6 +57,57 @@ function getCompanyProfileIdentity() {
   if (!heading || !name) return null;
 
   return { slug, name, heading };
+}
+
+function hasCompanyProfileLinkEvidence(slug, heading) {
+  if (!slug || !heading) return false;
+
+  const container = heading.closest(".org-top-card, .org-top-card-summary");
+  if (!container) return false;
+
+  return [...container.querySelectorAll('a[href*="/company/"]')].some((a) => {
+    try {
+      return (
+        getCompanyProfileSlug(
+          new URL(a.getAttribute("href"), location.origin).pathname,
+        ) === slug
+      );
+    } catch (_e) {
+      return false;
+    }
+  });
+}
+
+function isCompanyProfileIdentityCurrent({ slug, name, heading }) {
+  if (!companyProfileRouteChangePending) return true;
+
+  if (hasCompanyProfileLinkEvidence(slug, heading)) {
+    companyProfileRouteChangePending = false;
+    companyProfileHeadingAtRouteChange = null;
+    return true;
+  }
+
+  const previous = companyProfileHeadingAtRouteChange;
+  if (!previous?.heading) {
+    companyProfileRouteChangePending = false;
+    companyProfileHeadingAtRouteChange = null;
+    return true;
+  }
+
+  const headingChanged =
+    heading !== previous.heading ||
+    name !== previous.name ||
+    (companyProfileLastIdentity &&
+      (heading !== companyProfileLastIdentity.heading ||
+        name !== companyProfileLastIdentity.name));
+
+  if (headingChanged) {
+    companyProfileRouteChangePending = false;
+    companyProfileHeadingAtRouteChange = null;
+    return true;
+  }
+
+  return false;
 }
 
 function clearCompanyProfileMark() {
@@ -87,6 +144,17 @@ function attachCompanyProfileSlug({ name, slug }) {
   companyProfileAttachedName = name;
   companyProfileAttachedSlug = slug;
 
+  const resetAttachment = () => {
+    if (
+      companyProfileAttachedName !== name ||
+      companyProfileAttachedSlug !== slug
+    ) {
+      return;
+    }
+    companyProfileAttachedName = null;
+    companyProfileAttachedSlug = null;
+  };
+
   Promise.resolve()
     .then(() =>
       chrome.runtime.sendMessage({
@@ -95,9 +163,11 @@ function attachCompanyProfileSlug({ name, slug }) {
         slug,
       }),
     )
+    .then((response) => {
+      if (response?.ok !== true) resetAttachment();
+    })
     .catch((e) => {
-      companyProfileAttachedName = null;
-      companyProfileAttachedSlug = null;
+      resetAttachment();
       console.error(
         `${getLogPrefix(console.error.name)} - ${getLineNumber()} - Company slug attach failed:`,
         e,
@@ -111,8 +181,13 @@ async function refreshCompanyProfileMark() {
   if (!companyProfileIsEnabled()) return;
 
   const identity = getCompanyProfileIdentity();
-  if (!identity) return;
+  if (!identity || !isCompanyProfileIdentityCurrent(identity)) return;
 
+  companyProfileLastIdentity = {
+    slug: identity.slug,
+    name: identity.name,
+    heading: identity.heading,
+  };
   attachCompanyProfileSlug(identity);
 
   let blacklisted = false;
@@ -173,6 +248,7 @@ function startCompanyProfileObserver() {
   });
   companyProfileObserver.observe(document.documentElement, {
     childList: true,
+    characterData: true,
     subtree: true,
   });
 }
@@ -186,9 +262,27 @@ function onCompanyProfileUrlChange() {
   companyProfileRefreshToken += 1;
   clearCompanyProfileMark();
 
-  if (getCompanyProfileSlug()) {
+  const previousSlug = getCompanyProfileSlug(companyProfileRoutePath);
+  const nextSlug = getCompanyProfileSlug();
+  const pathChanged = location.pathname !== companyProfileRoutePath;
+  companyProfileRoutePath = location.pathname;
+
+  if (nextSlug) {
+    if (pathChanged && previousSlug !== nextSlug) {
+      const heading = getCompanyProfileHeading();
+      companyProfileHeadingAtRouteChange = heading
+        ? { heading, name: getTextContent(heading) }
+        : null;
+      companyProfileRouteChangePending = true;
+    } else if (pathChanged) {
+      companyProfileHeadingAtRouteChange = null;
+      companyProfileRouteChangePending = false;
+    }
     startCompanyProfileObserver();
   } else {
+    companyProfileLastIdentity = null;
+    companyProfileHeadingAtRouteChange = null;
+    companyProfileRouteChangePending = false;
     stopCompanyProfileObserver();
   }
   scheduleCompanyProfileMark();
@@ -216,14 +310,21 @@ function initCompanyProfileMarker({
 
   if (!companyProfileStarted) {
     companyProfileStarted = true;
+    companyProfileRoutePath = location.pathname;
+    companyProfileLastIdentity = null;
+    companyProfileHeadingAtRouteChange = null;
+    companyProfileRouteChangePending = false;
     chrome.storage.onChanged.addListener(onCompanyProfileStorageChanged);
-    if (typeof blOnChange === "function") {
-      blOnChange(() => {
+    if (!companyProfileBlOnChangeListener && typeof blOnChange === "function") {
+      companyProfileBlOnChangeListener = () => {
         if (!companyProfileStarted) return;
         companyProfileAttachedName = null;
         companyProfileAttachedSlug = null;
         scheduleCompanyProfileMark();
-      });
+      };
+      const unsubscribe = blOnChange(companyProfileBlOnChangeListener);
+      companyProfileBlOnChangeUnsubscribe =
+        typeof unsubscribe === "function" ? unsubscribe : null;
     }
     document.addEventListener(
       COMPANY_PROFILE_URL_CHANGE_EVENT,
@@ -253,7 +354,17 @@ function stopCompanyProfileMarker() {
     window.removeEventListener("hashchange", onCompanyProfileUrlChange);
   }
 
+  if (companyProfileBlOnChangeUnsubscribe) {
+    companyProfileBlOnChangeUnsubscribe();
+    companyProfileBlOnChangeUnsubscribe = null;
+    companyProfileBlOnChangeListener = null;
+  }
+
   companyProfileStarted = false;
+  companyProfileRoutePath = null;
+  companyProfileLastIdentity = null;
+  companyProfileHeadingAtRouteChange = null;
+  companyProfileRouteChangePending = false;
   companyProfileMatchesCompany = companyProfileMatchesBlacklist;
   companyProfileIsEnabled = () => true;
   companyProfileAttachedName = null;

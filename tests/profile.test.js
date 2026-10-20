@@ -85,7 +85,6 @@ describe('company profile identity', () => {
   beforeEach(() => {
     stopCompanyProfileMarker();
     installChromeStorage();
-    blacklistListeners.length = 0;
     document.head.innerHTML = '';
     document.body.innerHTML = '';
     history.replaceState({}, '', '/');
@@ -143,7 +142,6 @@ describe('company profile marking', () => {
   beforeEach(() => {
     stopCompanyProfileMarker();
     installChromeStorage();
-    blacklistListeners.length = 0;
     document.head.innerHTML = '';
     document.body.innerHTML = '';
     history.replaceState({}, '', '/company/acme/');
@@ -223,9 +221,64 @@ describe('company profile marking', () => {
     expect(heading.classList.contains('ljm-blacklisted-company')).toBe(false);
 
     history.replaceState({}, '', '/company/acme-ltd/');
-    await refreshCompanyProfileMark();
+    document.dispatchEvent(new CustomEvent('ljm:urlchange'));
+    document.body.innerHTML = '';
+    const nextHeading = makeProfileHeading('Acme Corp');
+    await wait(400);
 
-    expect(heading.classList.contains('ljm-blacklisted-company')).toBe(true);
+    expect(heading.classList.contains('ljm-blacklisted-company')).toBe(false);
+    expect(nextHeading.classList.contains('ljm-blacklisted-company')).toBe(
+      true,
+    );
+  });
+
+  it('does not attach or mark a stale heading after a route change', async () => {
+    const staleHeading = makeProfileHeading('Acme Corp');
+    await initCompanyProfileMarker({ matchesCompany: async () => true });
+    await wait(10);
+    sentMessages.length = 0;
+
+    history.replaceState({}, '', '/company/beta/');
+    document.dispatchEvent(new CustomEvent('ljm:urlchange'));
+    await wait(400);
+
+    expect(staleHeading.classList.contains('ljm-blacklisted-company')).toBe(
+      false,
+    );
+    expect(
+      sentMessages.filter(
+        (message) => message.action === 'companies.attachSlug',
+      ),
+    ).toEqual([]);
+  });
+
+  it('accepts a new route when the profile card links to its slug', async () => {
+    const card = document.createElement('section');
+    card.className = 'org-top-card';
+    const heading = document.createElement('h1');
+    heading.className = 'org-top-card-summary__title';
+    heading.textContent = 'Acme Corp';
+    const link = document.createElement('a');
+    link.href = '/company/acme/';
+    card.append(heading, link);
+    document.body.appendChild(card);
+
+    await initCompanyProfileMarker({ matchesCompany: async () => false });
+    await wait(10);
+    sentMessages.length = 0;
+
+    history.replaceState({}, '', '/company/beta/');
+    link.href = '/company/beta/';
+    document.dispatchEvent(new CustomEvent('ljm:urlchange'));
+    await wait(400);
+
+    expect(
+      sentMessages.filter(
+        (message) =>
+          message.action === 'companies.attachSlug' &&
+          message.slug === 'beta',
+      ),
+    ).toHaveLength(1);
   });
 
   it('clears the mark when the marker is disabled and restores it when enabled', async () => {
@@ -288,6 +341,22 @@ describe('company profile marking', () => {
     );
   });
 
+  it('reacts to heading text updates in place', async () => {
+    const heading = makeProfileHeading('Acme Corp');
+    const names = [];
+    await initCompanyProfileMarker({
+      matchesCompany: async ({ name }) => {
+        names.push(name);
+        return false;
+      },
+    });
+
+    heading.firstChild.nodeValue = 'Beta Ltd';
+    await wait(400);
+
+    expect(names).toContain('Beta Ltd');
+  });
+
   it('attaches the profile slug once per identity', async () => {
     makeProfileHeading('Acme Corp');
     await initCompanyProfileMarker({ matchesCompany: async () => true });
@@ -306,6 +375,38 @@ describe('company profile marking', () => {
         slug: 'acme',
       },
     ]);
+  });
+
+  it('retries slug attachment after a rejected envelope', async () => {
+    makeProfileHeading('Acme Corp');
+    let attempts = 0;
+    chrome.runtime.sendMessage = async (message) => {
+      if (message.action !== 'companies.attachSlug') return { ok: true };
+      attempts += 1;
+      sentMessages.push(message);
+      return attempts === 1
+        ? { ok: false, error: 'missing' }
+        : { ok: true, company: null };
+    };
+
+    await initCompanyProfileMarker({ matchesCompany: async () => false });
+    await wait(20);
+    expect(attempts).toBe(1);
+
+    await refreshCompanyProfileMark();
+    await wait(20);
+    expect(attempts).toBe(2);
+  });
+
+  it('does not duplicate the blacklist subscription across stop/init', async () => {
+    const before = blacklistListeners.length;
+
+    stopCompanyProfileMarker();
+    await initCompanyProfileMarker({ matchesCompany: async () => false });
+    stopCompanyProfileMarker();
+    await initCompanyProfileMarker({ matchesCompany: async () => false });
+
+    expect(blacklistListeners.length).toBe(before);
   });
 
   it('refreshes when settings change', async () => {
