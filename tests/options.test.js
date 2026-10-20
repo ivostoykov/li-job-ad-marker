@@ -13,7 +13,18 @@ async function openOptions(stored) {
   await new Promise((resolve) => window.addEventListener('DOMContentLoaded', resolve));
   const writes = [];
   window.chrome = {
-    runtime: { getManifest: () => ({ name: 'Test', version: '1' }) },
+    runtime: {
+      getManifest: () => ({ name: 'Test', version: '1' }),
+      onMessage: { addListener: () => {} },
+      sendMessage: async (message) => {
+        if (message.action === 'sync.status') return { ok: true, status: { mirror: 'ok' } };
+        if (message.action === 'data.import') {
+          // Simulate the background committing the validated legacy options.
+          stored = window.normaliseOptions(message.data.options);
+          return { ok: true };
+        }
+      }
+    },
     storage: { sync: {
       get: async () => ({ 'ljm-options': stored }),
       set: async (value) => { writes.push(value); stored = value['ljm-options']; }
@@ -44,7 +55,7 @@ describe('options page settings paths', () => {
     expect(doc.getElementById('message').textContent).toBe('Saved.');
   });
 
-  it('imports malformed colours and booleans using defaults before storing or populating the form', async () => {
+  it('reloads the background-normalised settings after a legacy import without writing options itself', async () => {
     const { window, writes } = await openOptions({});
     const doc = window.document;
     let fileInput;
@@ -58,15 +69,14 @@ describe('options page settings paths', () => {
       readAsText() {
         this.result = JSON.stringify({ options: { debug: 'false', treatPromotedAsViewed: [],
           unwantedTitleWords: ['bad'], colours: { viewed: '0.1', applied: '#abc', blacklisted: '#123456; } body { color:red' } } });
-        this.onloadend();
+        this.onload();
       }
     };
     doc.getElementById('btn-import').click();
     Object.defineProperty(fileInput, 'files', { value: [{}] });
     fileInput.dispatchEvent(new window.Event('change'));
     await vi.waitFor(() => expect(doc.getElementById('message').textContent).toBe('Imported.'));
-    expect(writes).toHaveLength(1);
-    expect(writes[0]['ljm-options']).toEqual(globalThis._testExports.SETTINGS_DEFAULTS);
+    expect(writes).toHaveLength(0);
     expect(doc.getElementById('debug').checked).toBe(false);
     expect(doc.getElementById('treat-promoted-as-viewed').checked).toBe(false);
     expect(doc.getElementById('colour-blacklisted').value).toBe('#b41e1e');

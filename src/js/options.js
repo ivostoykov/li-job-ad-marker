@@ -47,25 +47,15 @@ function updateAgeingLimitStatus() {
   status.textContent = ageingLimitDays === null ? '(disabled)' : '';
 }
 
-async function getJobsFromLinkedIn() {
-  const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
-  if (!tabs.length) return null;
+async function refreshSyncStatus() {
+  const el = document.getElementById('sync-status');
   try {
-    const response = await chrome.tabs.sendMessage(tabs[0].id, { action: 'get-all-jobs' });
-    return response?.jobs ?? [];
+    const response = await chrome.runtime.sendMessage({ action: 'sync.status' });
+    if (!response?.ok) throw new Error(response?.error || 'Sync status unavailable');
+    el.textContent = response.status?.mirror === 'ok' ? ''
+      : 'Blacklist sync is paused. Your data is still saved on this device. Sync will retry automatically.';
   } catch {
-    return null;
-  }
-}
-
-async function importJobsToLinkedIn(jobs) {
-  const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
-  if (!tabs.length) return false;
-  try {
-    const response = await chrome.tabs.sendMessage(tabs[0].id, { action: 'import-jobs', jobs });
-    return response?.ok ?? false;
-  } catch {
-    return false;
+    el.textContent = 'Blacklist sync status is unavailable. Your local data has not been changed.';
   }
 }
 
@@ -76,6 +66,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   savedOptions = normaliseOptions(await getOptions());
   populateForm(savedOptions);
+  void refreshSyncStatus();
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'data-changed' || message.action === 'sync-status-changed') {
+      void refreshSyncStatus();
+    }
+  });
 
   document.getElementById('colour-viewed').addEventListener('input', (e) => {
     document.getElementById('colour-viewed-val').value = e.target.value;
@@ -98,28 +95,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-export').addEventListener('click', async () => {
-    const mf = chrome.runtime.getManifest();
-    const [options, blacklist, jobs] = await Promise.all([
-      getOptions(),
-      blGetList(),
-      getJobsFromLinkedIn()
-    ]);
-
-    const payload = { version: mf.version, options, blacklist };
-    if (jobs !== null) payload.jobs = jobs;
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ljm-export-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-
-    showMessage(
-      jobs === null ? 'Exported (no LinkedIn tab open — jobs not included).' : 'Exported.',
-      'success'
-    );
+    const buttons = ['btn-save', 'btn-import', 'btn-export'].map((id) => document.getElementById(id));
+    buttons.forEach((button) => { button.disabled = true; });
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'data.export' });
+      if (!response?.ok || !response.data) throw new Error(response?.error || 'Backup unavailable');
+      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ljm-export-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+      showMessage('Backup download started.', 'success');
+    } catch (err) {
+      showMessage(`Export failed: ${err.message}`, 'error');
+    } finally {
+      buttons.forEach((button) => { button.disabled = false; });
+    }
   });
 
   document.getElementById('btn-import').addEventListener('click', () => {
@@ -130,31 +126,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       const file = e.target.files[0];
       if (!file) return;
 
+      const buttons = ['btn-save', 'btn-import', 'btn-export'].map((id) => document.getElementById(id));
+      buttons.forEach((button) => { button.disabled = true; });
       const reader = new FileReader();
-      reader.onloadend = async () => {
+      reader.onerror = () => {
+        showMessage('Import failed: the file could not be read.', 'error');
+        buttons.forEach((button) => { button.disabled = false; });
+      };
+      reader.onload = async () => {
         try {
           const data = JSON.parse(reader.result);
-
-          if (data.options) {
-            const importedOptions = normaliseOptions(data.options);
-            await setOptions(importedOptions);
-            savedOptions = importedOptions;
+          const response = await chrome.runtime.sendMessage({ action: 'data.import', data });
+          if (!response?.ok) throw new Error(response?.error || 'Restore unavailable');
+          try {
+            savedOptions = normaliseOptions(await getOptions());
             populateForm(savedOptions);
+            showMessage('Imported.', 'success');
+          } catch {
+            showMessage('Imported. Reload this page to see the restored settings.', 'success');
           }
-
-          if (Array.isArray(data.blacklist)) {
-            await blSaveList(data.blacklist);
-          }
-
-          let jobsNote = '';
-          if (Array.isArray(data.jobs) && data.jobs.length) {
-            const ok = await importJobsToLinkedIn(data.jobs);
-            jobsNote = ok ? '' : ' Jobs skipped — no LinkedIn tab open.';
-          }
-
-          showMessage(`Imported.${jobsNote}`, 'success');
+          await refreshSyncStatus();
         } catch (err) {
           showMessage(`Import failed: ${err.message}`, 'error');
+        } finally {
+          buttons.forEach((button) => { button.disabled = false; });
         }
       };
       reader.readAsText(file);
