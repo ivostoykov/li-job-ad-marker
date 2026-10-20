@@ -61,6 +61,8 @@ Shared helpers in `src/js/utils.js` (background, content, options): `TYPE_RANK`,
 | `settings.set` | `{ options }` | `{}`; normalised with `normaliseOptions`. `setOptions()` sends this from every context |
 | `sync.status` | – | `{ status: { mirror: 'ok'|'full'|'error', error: string|null, at: number|null } }` |
 
+`data.export` and `data.import` are accepted only from extension pages (`sender.url` under `chrome.runtime.getURL('')`); content scripts get `error: 'forbidden'`.
+
 Incognito senders (`sender.tab.incognito`): `jobs.save`, `jobs.migrateLegacy`, `notes.add|update|delete` are refused with `error: 'incognito'`. Content in incognito keeps jobs in its ephemeral LinkedIn-origin DB as before. Blacklist and settings writes stay allowed (they were already synced).
 
 ### Snapshot (`data.export` / `data.import`)
@@ -73,7 +75,7 @@ Incognito senders (`sender.tab.incognito`): `jobs.save`, `jobs.migrateLegacy`, `
 Import:
 - A pending journal from an earlier failed roll-back is resolved first; the import fails rather than overwrite it.
 - Whole file validated before any write; any invalid record or any v2 option with a wrong type rejects the import.
-- v1 (`{ version, options?, blacklist?: string[], jobs?: [{id,type,timestamp}] }`) is converted: options use the shared `normaliseOptions` fallback (invalid fields become defaults, as before); blacklist names reuse same-`nameKey` records; jobs merge by `linkedInJobId` (rank-monotonic).
+- v1 must look like the previous exporter's file: non-empty `version`, `options` object, `blacklist: string[]`, optional `jobs: [{id,type,timestamp}]`, and no v2 fields (`format`, `schemaVersion`, `companies`, `notes`, `exportedAt`). Anything else is rejected. It is converted: options use the shared `normaliseOptions` fallback (invalid fields become defaults, as before); blacklist names reuse same-`nameKey` records; jobs merge by `linkedInJobId` (rank-monotonic).
 - v2 merge: by `id`, newer `updatedAt` wins, including lower states and deletions; equal times use a deterministic tie. A job whose `linkedInJobId` exists under another ID is replaced only if the incoming record is newer than every local match. Companies are merged by name/slug afterwards. Notes by `id` only.
 - Crash safety: the journal (previous and imported settings) commits before settings change and is deleted in the same transaction as the records. A journal found later means the records never committed; previous settings are restored only while the stored value still equals the imported one, so a later unrelated change (local or synced) is not rolled back. storage.sync cannot be locked against other devices.
 
@@ -102,5 +104,6 @@ Import:
 
 - Kept and dual-written (active names) together with `ljmLegacyBlacklistWriter`, an identical copy written only by current versions. An array equal to the writer copy came from a current device and is not diffed.
 - Other arrays come from old versions and are applied as a diff (additions and removals) against this device's last seen array (`storage.local` `ljmLegacyBlacklistSeen`, which is also the per-device blacklist migration marker).
-- First run without a baseline: only names unknown locally and in the mirror are added; known tombstones are not revived.
-- Known limitations (tested): an old-version device writing a stale array re-adds names removed meanwhile (the old format has no timestamps); an old-version change written back to exactly the current writer copy is not detected. Remove the legacy array in a later release.
+- Conservative policy (the old format has no timestamps): additions only create companies unknown locally and in the mirror; a known tombstone is never revived, so a stale array cannot undo a newer deletion. Removals still propagate.
+- Start-up rewrites the legacy array only if something changed locally or it is missing; a device with no blacklist never publishes an empty array.
+- Known limitations (tested): an old-version re-add of a deleted company is not applied (re-blacklist with a current version); an old-version change written back to exactly the current writer copy is not detected. Remove the legacy array in a later release.

@@ -39,6 +39,13 @@ describe('background jobs (#4/#5)', () => {
     expect(jobs.map((j) => [j.linkedInJobId, j.type])).toEqual([['1', 'applied']]);
   });
 
+  it('refuses backup export and import from content scripts', async () => {
+    const d = await readyDevice();
+    const content = { tab: { id: 1, incognito: false }, url: 'https://www.linkedin.com/jobs/search/' };
+    expect(await d.send({ action: 'data.export' }, content)).toEqual({ ok: false, error: 'forbidden' });
+    expect(await d.send({ action: 'data.import', data: {} }, content)).toEqual({ ok: false, error: 'forbidden' });
+  });
+
   it('refuses persistent writes from incognito tabs', async () => {
     const d = await readyDevice();
     for (const action of ['jobs.save', 'jobs.migrateLegacy', 'notes.add']) {

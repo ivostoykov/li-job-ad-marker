@@ -154,7 +154,7 @@ export function createDevice({ sync = new SyncArea(), local = new StorageArea('l
     pageMessages,
     tabMessages,
     ready: () => vm.runInContext('ensureDataReady()', context),
-    send(message, sender = { tab: { id: 1, incognito: false } }) {
+    send(message, sender = { id: 'test', url: 'chrome-extension://test/src/options.html' }) {
       return new Promise((resolvePromise) => {
         const handled = runtimeListeners.some((listener) => listener(clone(message), sender, (r) => resolvePromise(clone(r))) === true);
         if (!handled) resolvePromise(undefined);

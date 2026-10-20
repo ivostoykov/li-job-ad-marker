@@ -499,7 +499,7 @@ function assertImport(condition, message) {
 }
 
 function validateBackupOptions(options) {
-  const colour = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+  const colour = (value) => typeof value === 'string' && value.length === 7 && /^#[0-9a-f]{6}$/i.test(value);
   assertImport(options && typeof options === 'object' && !Array.isArray(options), 'options must be an object');
   assertImport(typeof options.debug === 'boolean', 'options.debug must be a boolean');
   assertImport(typeof options.ageingLimitDays === 'string' ||
@@ -507,7 +507,7 @@ function validateBackupOptions(options) {
   assertImport(typeof options.treatPromotedAsViewed === 'boolean', 'options.treatPromotedAsViewed must be a boolean');
   assertImport(typeof options.unwantedTitleWords === 'string', 'options.unwantedTitleWords must be a string');
   const colours = options.colours;
-  assertImport(colours && typeof colours === 'object', 'options.colours must be an object');
+  assertImport(colours && typeof colours === 'object' && !Array.isArray(colours), 'options.colours must be an object');
   assertImport(typeof colours.viewed === 'number' && colours.viewed >= 0 && colours.viewed <= 1, 'options.colours.viewed is invalid');
   assertImport(colour(colours.applied) && colour(colours.blacklisted), 'options.colours must be #rrggbb values');
   return normaliseOptions(options);
@@ -567,9 +567,14 @@ function validateImport(data) {
     return { kind: 'v2', options: validateBackupOptions(data.options), jobs, companies, notes };
   }
 
+  // v1 is the previous exporter's shape: { version, options, blacklist, jobs? }.
+  // Anything carrying v2 fields without the v2 header is malformed, not v1.
   assertImport(data.format === undefined, `unknown format ${data.format}`);
-  // v1 (pre-backup export): options use the shared normaliser fallback, as before.
-  const blacklist = data.blacklist ?? [];
+  assertImport(data.schemaVersion === undefined && data.companies === undefined && data.notes === undefined &&
+    data.exportedAt === undefined, 'v2 fields without format ljm-export and schemaVersion 2');
+  assertImport(isNonEmptyString(data.version), 'not an ljm-export backup or a previous export (version missing)');
+  assertImport(data.options && typeof data.options === 'object' && !Array.isArray(data.options), 'options must be an object');
+  const blacklist = data.blacklist;
   assertImport(Array.isArray(blacklist) && blacklist.every((n) => typeof n === 'string'), 'blacklist must be an array of names');
   const jobs = data.jobs ?? [];
   assertImport(Array.isArray(jobs), 'jobs must be an array');
@@ -577,10 +582,10 @@ function validateImport(data) {
     j && (typeof j.id === 'string' || typeof j.id === 'number') && String(j.id) && isJobType(j.type) && isTimestamp(j.timestamp),
     `jobs[${i}] is invalid`,
   ));
-  assertImport(data.options === undefined || (data.options && typeof data.options === 'object'), 'options must be an object');
+  // v1 options use the shared normaliser fallback, as the previous importer did.
   return {
     kind: 'v1',
-    options: data.options === undefined ? undefined : normaliseOptions(data.options),
+    options: normaliseOptions(data.options),
     blacklist: blacklist.filter((n) => normaliseNameKey(n)),
     jobs,
   };

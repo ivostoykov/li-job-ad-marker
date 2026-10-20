@@ -212,21 +212,62 @@ describe('legacy blacklistedCompanies array during the version transition', () =
     const fresh = createDevice({ sync });
     await fresh.ready();
     expect(await blacklist(fresh)).toEqual([]);
+    await settle(fresh);
     expect(sync.data.get('co:a').deletedAt).toBe(t);
   });
 
-  it('known limitation: a stale array written by an offline old-version device re-adds a removed name', async () => {
-    const { sync, list: [a] } = await devices(1);
+  it('does not revive a locally deleted company from a stale old-version array', async () => {
+    const { sync, list: [a, b] } = await devices(2);
     await a.send({ action: 'companies.setBlacklisted', name: 'Acme', blacklisted: true });
+    await settle(a, b);
     const staleCopy = [...sync.data.get('blacklistedCompanies')];
     await a.send({ action: 'companies.toggleBlacklist', name: 'Acme' });
-    await settle(a);
+    await settle(a, b);
     expect(sync.data.get('blacklistedCompanies')).toEqual([]);
 
-    // The old format has no timestamps, so this write is indistinguishable from a re-add.
+    // The old format has no timestamps: the known tombstone wins, unknown names still migrate.
     await sync.set({ blacklistedCompanies: [...staleCopy, 'Other'] });
+    await settle(a, b);
+    for (const d of [a, b]) {
+      expect((await blacklist(d)).map((s) => s.split(':')[1])).toEqual(['other']);
+    }
+  });
+
+  it('known limitation: an old-version re-add of a deleted company is not applied', async () => {
+    const { sync, list: [a] } = await devices(1);
+    await a.send({ action: 'companies.setBlacklisted', name: 'Acme', blacklisted: true });
+    await a.send({ action: 'companies.toggleBlacklist', name: 'Acme' });
     await settle(a);
-    expect((await blacklist(a)).map((s) => s.split(':')[1]).sort()).toEqual(['acme', 'other']);
+    await sync.set({ blacklistedCompanies: ['Acme'] });
+    await settle(a);
+    expect(await blacklist(a)).toEqual([]);
+    await a.send({ action: 'companies.toggleBlacklist', name: 'Acme' });
+    expect((await blacklist(a)).map((s) => s.split(':')[1])).toEqual(['acme']);
+  });
+
+  it('a fresh device publishes no empty legacy array before synced data arrives', async () => {
+    const { sync } = await devices(1);
+    expect(sync.data.has('blacklistedCompanies')).toBe(false);
+  });
+
+  it('merged-away identity deleted offline stays deleted after devices reconnect', async () => {
+    const { sync, list: [a, b] } = await devices(2);
+    sync.pause();
+    const first = (await a.send({ action: 'companies.setBlacklisted', name: 'Acme', blacklisted: true })).companies[0];
+    await new Promise((r) => setTimeout(r, 2));
+    await b.send({ action: 'companies.setBlacklisted', name: 'Acme', blacklisted: true });
+    sync.resume();
+    await settle(a, b);
+    expect(await blacklist(a)).toEqual([`${first.id}:acme:`]);
+
+    // b goes offline before seeing the merge result and un-blacklists its own id.
+    sync.pause();
+    await b.context.companiesSetBlacklisted('Acme', null, false, Date.now() + 50);
+    await b.context.syncPushCompanies((await b.context.companiesGetAll()), Date.now() + 50);
+    sync.resume();
+    await settle(a, b);
+    expect(await blacklist(a)).toEqual([]);
+    expect(await blacklist(b)).toEqual([]);
   });
 
   it('ignores its own legacy writes (no diff, no extra writes)', async () => {

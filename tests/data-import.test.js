@@ -90,6 +90,15 @@ describe('data.import v2', () => {
     ['object slug', (d) => ({ ...d, companies: [{ ...d.companies[0], slug: {} }] })],
     ['bad note job id', (d) => ({ ...d, notes: [{ ...d.notes[0], linkedInJobId: 5 }] })],
     ['missing timestamps', (d) => ({ ...d, notes: [{ ...d.notes[0], createdAt: undefined }] })],
+    ['invalid final record', (d) => ({ ...d, notes: [...d.notes, { ...d.notes[0], id: 'last', text: 7 }] })],
+    ['colour with trailing newline', (d) => ({ ...d, options: { ...d.options, colours: { ...d.options.colours, blacklisted: '#123456\n' } } })],
+    ['array options', (d) => ({ ...d, options: [] })],
+    ['empty object', () => ({})],
+    ['missing format', (d) => ({ ...d, format: undefined })],
+    ['missing schemaVersion', (d) => ({ ...d, schemaVersion: undefined })],
+    ['v1 without version', () => ({ options: {}, blacklist: ['Acme'] })],
+    ['v1 without blacklist', () => ({ version: '1.1.72', options: {} })],
+    ['v1 with array options', () => ({ version: '1.1.72', options: [], blacklist: [] })],
   ])('rejects the whole file before any write: %s', async (_label, mutate) => {
     const { data } = await (await seeded()).send({ action: 'data.export' });
     const target = await readyDevice();
@@ -129,7 +138,7 @@ describe('data.import v1 (previous export format)', () => {
 
   it('rejects an invalid v1 file without writing', async () => {
     const d = await readyDevice();
-    const result = await d.send({ action: 'data.import', data: { ...v1, jobs: [{ id: '1', type: 'constructor', timestamp: 1 }] } });
+    const result = await d.send({ action: 'data.import', data: { ...v1, jobs: [...v1.jobs, { id: '1', type: 'constructor', timestamp: 1 }] } });
     expect(result.ok).toBe(false);
     expect(await storedSettings(d)).toBeUndefined();
     expect((await d.send({ action: 'companies.getBlacklist' })).companies).toEqual([]);

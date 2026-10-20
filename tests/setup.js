@@ -38,7 +38,7 @@ globalThis.chrome = {
     getManifest: () => ({ name: 'LJM Test', version: '0.0.0' }),
     getURL: (path) => `chrome-extension://test/${path}`,
     onMessage: { addListener: (listener) => globalThis.__runtimeMessageListeners.push(listener) },
-    sendMessage: (message) => globalThis.__background.send(message),
+    sendMessage: (message) => globalThis.__background.send(message, { tab: { id: 1, incognito: false }, url: location.href }),
   },
   storage: {
     sync: syncArea,
