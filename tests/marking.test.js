@@ -77,40 +77,44 @@ describe('parseUnwantedTitleWords', () => {
 });
 
 describe('titleMatchesUnwanted', () => {
-  it('returns false for an empty words list', () => {
-    expect(titleMatchesUnwanted('Finance Director', [])).toBe(false);
+  it('returns null for an empty words list', () => {
+    expect(titleMatchesUnwanted('Finance Director', [])).toBeNull();
   });
 
-  it('returns false for a null title', () => {
-    expect(titleMatchesUnwanted(null, ['Finance'])).toBe(false);
+  it('returns null for a null title', () => {
+    expect(titleMatchesUnwanted(null, ['Finance'])).toBeNull();
   });
 
-  it('returns false when no word matches', () => {
-    expect(titleMatchesUnwanted('Senior Engineer', ['Finance', 'Manager'])).toBe(false);
+  it('returns null when no word matches', () => {
+    expect(titleMatchesUnwanted('Senior Engineer', ['Finance', 'Manager'])).toBeNull();
   });
 
-  it('returns true for an exact word match', () => {
-    expect(titleMatchesUnwanted('Finance Director', ['Finance'])).toBe(true);
+  it('returns the matched substring rule', () => {
+    expect(titleMatchesUnwanted('Finance Director', ['Finance'])).toBe('Finance');
   });
 
   it('is case-insensitive', () => {
-    expect(titleMatchesUnwanted('finance director', ['Finance'])).toBe(true);
+    expect(titleMatchesUnwanted('finance director', ['Finance'])).toBe('Finance');
   });
 
   it('matches a partial word (substring)', () => {
-    expect(titleMatchesUnwanted('VP Engineering', ['Engineer'])).toBe(true);
+    expect(titleMatchesUnwanted('VP Engineering', ['Engineer'])).toBe('Engineer');
   });
 
   it('matches on any word in the list', () => {
-    expect(titleMatchesUnwanted('Sales Manager', ['Finance', 'Manager'])).toBe(true);
+    expect(titleMatchesUnwanted('Sales Manager', ['Finance', 'Manager'])).toBe('Manager');
   });
 
   it('matches a multi-word phrase', () => {
-    expect(titleMatchesUnwanted('Head of Finance Operations', ['Head of Finance'])).toBe(true);
+    expect(titleMatchesUnwanted('Head of Finance Operations', ['Head of Finance'])).toBe('Head of Finance');
   });
 
-  it('returns false for an empty title string', () => {
-    expect(titleMatchesUnwanted('', ['Finance'])).toBe(false);
+  it('returns null for an empty title string', () => {
+    expect(titleMatchesUnwanted('', ['Finance'])).toBeNull();
+  });
+  it('matches exact rules only against the full title, ignoring case and outer whitespace', () => {
+    expect(titleMatchesUnwanted(' Finance Director ', ['=finance director'])).toBe('=finance director');
+    expect(titleMatchesUnwanted('Senior Finance Director', ['=Finance Director'])).toBeNull();
   });
 });
 

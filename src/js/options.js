@@ -1,15 +1,5 @@
 let savedOptions = null;
 
-function normaliseOptions(options) {
-  return {
-    ...SETTINGS_DEFAULTS,
-    ...options,
-    ageingLimitDays: normaliseAgeingLimitDays(options?.ageingLimitDays),
-    unwantedTitleWords: typeof options?.unwantedTitleWords === 'string' ? options.unwantedTitleWords : '',
-    colours: { ...SETTINGS_DEFAULTS.colours, ...(options?.colours ?? {}) }
-  };
-}
-
 function getAgeingLimitInputValue() {
   return document.getElementById('ageing-limit-days').value.trim();
 }
