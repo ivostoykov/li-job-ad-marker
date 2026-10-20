@@ -5,7 +5,7 @@
 
 ---
 
-LinkedIn Job Ad Marker is an extension available for Chrome and Firefox applied solely on LinkedIn job search pages. It helps you work through large job lists faster by marking adverts you have already seen, jobs you have applied for, companies you do not want to deal with, and older listings you may want to skip.
+LinkedIn Job Ad Marker is an extension for Chrome and Firefox that marks LinkedIn job cards and blacklisted company profiles. It helps you work through large job lists faster by marking adverts you have already seen, jobs you have applied for, companies you do not want to deal with, and older listings you may want to skip.
 
 The aim is simple: reduce repeat scanning. Instead of re-reading the same cards every time LinkedIn reshuffles, reloads, or promotes old listings again, the extension adds lightweight visual cues directly to the job list.
 
@@ -23,6 +23,7 @@ It then applies visual marks:
 - `Blacklisted company`: the company line gets a reddish background and strikethrough
 - `Ageing`: LinkedIn publish-age tokens can be highlighted in orange when they are older than your configured threshold
 - `Unwanted title`: cards whose title contains a configured word or phrase are struck through with a red double underline
+- `Notes`: a small, non-clickable glyph indicates notes for the card's title and company
 
 Blacklisted companies and unwanted titles are independent of job state, so a card can be both `Applied` and struck through, or `Viewed` and `Blacklisted`.
 
@@ -45,11 +46,23 @@ Right-clicking on a LinkedIn jobs page gives you these actions:
 - `Toggle company blacklist`
 - `Toggle marker`
 - `Mark as applied`
+- `Add title to ignore list`
+- `Add selection to ignore list` (when text is selected)
+- `Add note`
+- `Show notes`
 - `Options`
 
 `Toggle marker` is a session-level kill switch. It removes all visual marks until you enable the marker again.
 
 `Options` opens the extension options page in a new tab.
+
+## Notes
+
+Right-click a card to add or show notes. Each note is an independent entry; adding another note never overwrites an existing one. Notes with the same title and company appear together, newest first, with their original LinkedIn job ID and creation time. A repost can therefore show earlier notes without pretending to be the same vacancy.
+
+Notes can be created when the job ID is unavailable. They show “Job ID unavailable” instead of an invented ID. Editing preserves the original job ID and creation time; deleting affects only the selected entry. Unsaved changes require confirmation before being discarded.
+
+Company matching normalises case and whitespace only. When a company-page slug is available, known different slugs remain separate. Name-only cards retain the ambiguity of companies with identical display names. Notes are plain text, remain on this device and have no automatic expiry.
 
 ## Options Page
 
@@ -77,14 +90,11 @@ Colour and ageing changes are applied live to LinkedIn pages, so a page reload i
 
 ## Export and Import
 
-The options page can export a JSON file containing:
+Export creates a complete JSON backup without requiring a LinkedIn tab. It includes saved settings, jobs, companies and every independent note, including soft-deleted records.
 
-- extension version
-- saved options
-- blacklisted companies
-- stored jobs, if a LinkedIn tab is open and reachable
+The format is `ljm-export`, schema version `2`, with export time and extension version recorded separately. Older export files remain importable. The whole file is validated before writing; invalid files report an error.
 
-Import restores the same structure. Job imports preserve the stronger state, so an older backup cannot downgrade an `applied` record back to `viewed`.
+Version 2 imports merge matching record IDs by `updatedAt`: the newer record wins, including deletions. Repeated imports do not duplicate note IDs. Ordinary job tracking still promotes viewed jobs to applied without downgrading them; importing a newer record is an explicit restore operation.
 
 ## Storage
 
@@ -92,23 +102,20 @@ The extension uses two browser storage layers:
 
 ### IndexedDB
 
-Database: `li-job-marker`
-Store: `jobs`
+The extension background owns the `ljm-data` database, with stores for jobs, companies, notes and schema metadata. Clearing LinkedIn site data does not clear this extension database.
 
-Each record contains:
+Records have client-generated IDs, creation/update timestamps and optional deletion timestamps. The LinkedIn job ID is a separate indexed field. Deleted records are hidden in normal use and preserved in backups.
 
-- `id`: LinkedIn job ID
-- `type`: `viewed` or `applied`
-- `timestamp`: when the record was saved
+Existing LinkedIn-origin job history is migrated when a LinkedIn page is opened. Only acknowledged, committed records that have not subsequently changed are removed from the legacy store. An older tab can continue writing without those new records being discarded. The empty legacy database may remain during the transition.
 
 ### `chrome.storage.sync`
 
 Used for:
 
 - options
-- blacklisted companies
+- a per-company blacklist mirror, including deletion records
 
-This means settings and blacklist data can follow the signed-in browser profile, subject to Chrome sync behaviour.
+Settings and blacklist data can follow the signed-in browser profile when browser sync is enabled. Jobs and notes are not synced. During the migration transition, the old blacklist array is retained for older extension versions. The options page warns if sync cannot continue; local data remains available.
 
 ## Where It Runs
 
@@ -116,13 +123,13 @@ The extension injects on:
 
 - `https://www.linkedin.com/*`
 
-It then activates its job-marking logic only when the current page is part of LinkedIn Jobs.
+It activates job-marking logic on supported LinkedIn Jobs surfaces and company-name marking on company profiles.
 
 This broader match is intentional, because LinkedIn often moves into job pages through SPA navigation rather than a full page load.
 
 ## Privacy
 
-All data stays in your browser. Nothing is sent to, shared with, or stored by any third party.
+Jobs and notes are stored locally in the extension. Settings and blacklisted companies use the browser's sync service when enabled. The extension does not send data to an application server or require a separate account.
 
 
 > [!NOTE]
