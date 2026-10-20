@@ -100,15 +100,15 @@ globalThis.indexedDB = {
   },
 };
 
-const runtimeMessageListeners = [];
-globalThis.__runtimeMessageListeners = runtimeMessageListeners;
+globalThis.__runtimeMessageListeners = [];
+globalThis.__storageChangeListeners = [];
 
 // Chrome API mock — must be set before any source script is evaluated
 globalThis.chrome = {
   runtime: {
     getManifest: () => ({ name: 'LJM Test', version: '0.0.0' }),
     getURL: (path) => `chrome-extension://test/${path}`,
-    onMessage: { addListener: (listener) => runtimeMessageListeners.push(listener) },
+    onMessage: { addListener: (listener) => globalThis.__runtimeMessageListeners.push(listener) },
     sendMessage: () => Promise.resolve({ ok: true }),
   },
   storage: {
@@ -123,7 +123,7 @@ globalThis.chrome = {
         return Promise.resolve();
       },
     },
-    onChanged: { addListener: () => {} },
+    onChanged: { addListener: (listener) => globalThis.__storageChangeListeners.push(listener) },
   },
 };
 
@@ -166,6 +166,7 @@ const combined =
       urlWatcherAttached = false;
       currentPageAdapter = defaultJobsAdapter;
       lastRightClickedCard = null;
+      enabled = true;
       globalThis.__indexedDbDatabases.clear();
     },
     startOnJobsPage: async () => {

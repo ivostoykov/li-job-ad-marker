@@ -35,7 +35,7 @@ async function toggleDebug(enabled) {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'sync' && changes[SETTINGS_KEY]) {
-    const newOptions = changes[SETTINGS_KEY].newValue;
+    const newOptions = normaliseOptions(changes[SETTINGS_KEY].newValue);
     if (newOptions?.debug !== undefined) {
       setDebugFlag(newOptions.debug);
     }
