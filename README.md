@@ -127,6 +127,35 @@ It activates job-marking logic on supported LinkedIn Jobs surfaces and company-n
 
 This broader match is intentional, because LinkedIn often moves into job pages through SPA navigation rather than a full page load.
 
+## Troubleshooting
+
+### Firefox: extension is enabled but LinkedIn is not marked
+
+Check the extension's site permission, even if its background page starts without errors:
+
+1. Open `about:addons` and select **LinkedIn Job Ad Marker**.
+2. Open **Permissions and data**.
+3. Enable **Access your data for https://www.linkedin.com**.
+4. Reload the LinkedIn tab.
+
+Without this permission, Firefox cannot inject the extension's content scripts. LinkedIn's own console errors do not necessarily indicate an extension problem.
+
+For development, you can check the permission from the extension's console: open `about:debugging#/runtime/this-firefox`, click **Inspect** beside the extension, then run:
+
+```js
+browser.permissions.contains({
+  origins: ["https://www.linkedin.com/*"]
+}).then(console.log)
+```
+
+The result should be `true`. Run this in the extension's background context (`moz-extension://…/_generated_background_page.html`), not the LinkedIn page console or Firefox's `webextension-fallback.html` debugging page.
+
+### Firefox: loading a local development copy
+
+Use the Firefox manifest from `FF/manifest.json` as the development package's root `manifest.json`, alongside the `src/` and `icons/` directories. Its paths are relative to that root; placing it inside `src/` makes them point to missing files such as `src/src/content.js`. Keep a separate package or preserve the Chrome manifest when preparing a Firefox copy.
+
+If you move the development package, use **Load Temporary Add-on** in `about:debugging` to select the manifest at its new location, then reload LinkedIn.
+
 ## Privacy
 
 Jobs and notes are stored locally in the extension. Settings and blacklisted companies use the browser's sync service when enabled. The extension does not send data to an application server or require a separate account.

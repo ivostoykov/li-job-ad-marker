@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Job Ad Marker",
+  "version": "1.2.0",
+  "description": "Marks viewed, applied, and blacklisted company job ads on LinkedIn.",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "tabs"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_page": "src/options.html",
+  "background": {
+    "scripts": [
+      "src/js/utils.js",
+      "src/js/settings.js",
+      "src/js/log.js",
+      "src/js/store.js",
+      "src/js/sync.js",
+      "src/background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/*"
+      ],
+      "js": [
+        "src/js/utils.js",
+        "src/js/settings.js",
+        "src/js/db.js",
+        "src/js/blacklist.js",
+        "src/js/log.js",
+        "src/content.js",
+        "src/js/notes-ui.js",
+        "src/js/profile.js"
+      ],
+      "css": [
+        "src/css/marker.css",
+        "src/css/notes.css"
+      ],
+      "all_frames": true,
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/page-debug.js"
+      ],
+      "matches": [
+        "https://www.linkedin.com/*"
+      ]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{f3b9c2e7-4a6d-4f1a-9b8e-2c7d5a1e6f90}",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  }
+}

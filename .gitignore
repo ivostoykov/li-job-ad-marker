@@ -3,7 +3,8 @@
 .aimem-spec/
 .issues/
 .claude/
-FF/
+FF/*
+!FF/manifest.json
 
 # Files
 AGENTS.md
