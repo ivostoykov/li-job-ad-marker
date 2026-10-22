@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Statistics</title>
+  <link rel="stylesheet" href="css/statistics.css">
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <p id="ext-title" class="brand">Job Ad Marker</p>
+      <h1>Statistics</h1>
+      <p class="lede">Job cards this browser showed you on LinkedIn results pages, counted on this device.</p>
+    </header>
+
+    <section class="controls" aria-label="Period">
+      <div class="periods" role="radiogroup" aria-label="Period">
+        <label><input type="radio" name="period" value="today" checked><span>Today</span></label>
+        <label><input type="radio" name="period" value="week"><span>This week</span></label>
+        <label><input type="radio" name="period" value="month"><span>This month</span></label>
+        <label><input type="radio" name="period" value="all"><span>All time</span></label>
+        <label><input type="radio" name="period" value="since"><span>Since</span></label>
+      </div>
+      <label class="since-field" for="since-date">
+        <span>From date</span>
+        <input type="date" id="since-date" disabled>
+      </label>
+    </section>
+
+    <p id="period-range" class="period-range" aria-live="polite"></p>
+    <p id="partial-note" class="note note--partial" hidden></p>
+    <p id="load-error" class="note note--error" role="alert" hidden></p>
+
+    <section class="card card--total" aria-labelledby="total-label">
+      <p id="total-label" class="card-label">Job cards shown</p>
+      <p class="total-value" id="stat-total">0</p>
+      <div class="bar" id="state-bar" aria-hidden="true">
+        <span class="bar-segment bar-segment--new" id="bar-new"></span>
+        <span class="bar-segment bar-segment--viewed" id="bar-viewed"></span>
+        <span class="bar-segment bar-segment--applied" id="bar-applied"></span>
+      </div>
+      <ul class="states" aria-label="Job state when first shown">
+        <li class="state state--new">
+          <span class="state-name">New</span>
+          <span class="state-value" id="stat-new">0</span>
+          <span class="state-share" id="share-new"></span>
+        </li>
+        <li class="state state--viewed">
+          <span class="state-name">Previously viewed</span>
+          <span class="state-value" id="stat-viewed">0</span>
+          <span class="state-share" id="share-viewed"></span>
+        </li>
+        <li class="state state--applied">
+          <span class="state-name">Applied</span>
+          <span class="state-value" id="stat-applied">0</span>
+          <span class="state-share" id="share-applied"></span>
+        </li>
+      </ul>
+      <p class="card-hint">Each card counts once in one of these states, based on what the extension knew when the card first appeared. New means no earlier view or application was known, not newly published.</p>
+    </section>
+
+    <section class="card" aria-labelledby="marks-label">
+      <h2 id="marks-label" class="card-label">Marked while shown</h2>
+      <ul class="marks">
+        <li><span>Blacklisted companies</span><span class="mark-value" id="stat-blacklisted">0</span></li>
+        <li><span>Unwanted titles</span><span class="mark-value" id="stat-unwantedTitle">0</span></li>
+        <li><span>Ageing</span><span class="mark-value" id="stat-ageing">0</span></li>
+      </ul>
+      <p class="card-hint">These overlap with the states above and with each other, so they are not added to the total. Blacklisted counts job cards, not companies.</p>
+    </section>
+
+    <section class="card card--about" aria-labelledby="tracking-since">
+      <p id="tracking-since" class="tracking-since"></p>
+      <details class="about-details">
+        <summary>How counting works</summary>
+        <ul class="about">
+          <li>A card counts when at least half of it is visible while marking is on.</li>
+          <li>Reloading, opening another results page or running a new search counts the cards again.</li>
+          <li>Scrolling back, selecting a job or LinkedIn redrawing the list does not.</li>
+          <li>Weeks run Monday to Sunday. Days follow this computer's local time.</li>
+          <li>Private windows are not counted. Statistics stay on this device: they are not synced or included in backups, and importing a backup leaves them unchanged.</li>
+        </ul>
+      </details>
+      <div class="reset">
+        <button type="button" id="btn-reset" class="button button--danger">Reset statistics</button>
+        <p class="reset-hint">Deletes only these counts. Viewed and applied jobs, notes and the blacklist are kept.</p>
+      </div>
+      <p id="reset-message" class="note" role="status" aria-live="polite"></p>
+    </section>
+
+    <footer class="privacy">
+      <svg class="privacy-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+        <path d="M12 2.75 4.75 5.5v5.75c0 4.6 3.05 8.7 7.25 10 4.2-1.3 7.25-5.4 7.25-10V5.5L12 2.75Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="m8.75 12.25 2.25 2.25 4.5-4.75" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Zero API queries &bull; 100% client-side statistics</span>
+    </footer>
+  </main>
+
+  <script src="js/utils.js"></script>
+  <script src="js/statistics.js"></script>
+</body>
+</html>

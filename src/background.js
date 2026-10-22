@@ -14,6 +14,7 @@ const MENU_IGNORE_TITLE = 'ignore-title';
 const MENU_IGNORE_SELECTION = 'ignore-selection';
 const MENU_ADD_NOTE = 'add-note';
 const MENU_SHOW_NOTES = 'show-notes';
+const MENU_STATISTICS = 'statistics';
 const MENU_OPTIONS = 'options';
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -75,6 +76,13 @@ chrome.runtime.onInstalled.addListener(() => {
     });
 
     chrome.contextMenus.create({
+      id: MENU_STATISTICS,
+      title: 'Statistics',
+      contexts: ['page', 'link'],
+      documentUrlPatterns: ['https://www.linkedin.com/*'],
+    });
+
+    chrome.contextMenus.create({
       id: MENU_OPTIONS,
       title: 'Options',
       contexts: ['page', 'link'],
@@ -86,6 +94,11 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === MENU_OPTIONS) {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/options.html') });
+    return;
+  }
+
+  if (info.menuItemId === MENU_STATISTICS) {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/statistics.html') });
     return;
   }
 
@@ -102,9 +115,9 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-const INCOGNITO_REFUSED_ACTIONS = ['jobs.save', 'jobs.migrateLegacy', 'notes.add', 'notes.update', 'notes.delete'];
+const INCOGNITO_REFUSED_ACTIONS = ['jobs.save', 'jobs.migrateLegacy', 'notes.add', 'notes.update', 'notes.delete', 'stats.record'];
 // Whole-database reads and replacement are for extension pages only, never content scripts.
-const EXTENSION_PAGE_ACTIONS = ['data.export', 'data.import'];
+const EXTENSION_PAGE_ACTIONS = ['data.export', 'data.import', 'stats.get', 'stats.reset'];
 
 function broadcastDataChanged(change) {
   const message = { action: 'data-changed', ...change };
@@ -112,6 +125,11 @@ function broadcastDataChanged(change) {
   chrome.tabs.query({ url: 'https://www.linkedin.com/*' })
     .then((tabs) => tabs.forEach((tab) => chrome.tabs.sendMessage(tab.id, message).catch(() => {})))
     .catch(() => {});
+}
+
+// Statistics changes only refresh extension pages; LinkedIn tabs never re-mark for them.
+function broadcastStatisticsChanged() {
+  chrome.runtime.sendMessage({ action: 'statistics-changed' }).catch(() => {});
 }
 
 async function blacklistSnapshot() {
@@ -173,6 +191,17 @@ const DATA_ACTIONS = {
     await syncAfterCompaniesChange(changed.companies);
     broadcastDataChanged({ jobs: changed.jobs, notes: changed.notes, ...await blacklistSnapshot() });
     return { counts: { jobs: changed.jobs.length, companies: changed.companies.length, notes: changed.notes.length } };
+  }),
+  'stats.record': (m) => dataMutate(async () => {
+    const result = await statisticsRecord(m.batchId, m.days, m.encounteredFrom);
+    if (result.recorded) broadcastStatisticsChanged();
+    return result;
+  }),
+  'stats.get': async () => ({ statistics: await statisticsGet() }),
+  'stats.reset': () => dataMutate(async () => {
+    const result = await statisticsReset();
+    broadcastStatisticsChanged();
+    return result;
   }),
   'sync.status': async () => ({ status: await syncGetStatus() }),
   'settings.set': (m) => dataMutate(async () => {

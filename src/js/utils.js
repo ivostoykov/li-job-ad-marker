@@ -31,3 +31,9 @@ function normaliseNameKey(text) {
 function noteGroupKey(title, company) {
   return `${normaliseNameKey(title)}\u001f${normaliseNameKey(company)}`;
 }
+
+// Local calendar date `YYYY-MM-DD`; statistics buckets use the user's local day.
+function localDateKey(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}

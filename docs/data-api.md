@@ -27,6 +27,9 @@ Note     { id, groupKey, title, company, companySlug: string|null, linkedInJobId
 meta     { key: 'schema', schemaVersion: 2 }        // a stored higher schemaVersion refuses writes
          { key: 'importJournal', previousSettings, importedSettings, startedAt }   // only while an import is in flight
          { key: 'jobsLegacyMigration', firstMigratedAt, lastMigratedAt, lastAcknowledged, totalAcknowledged }
+         { key: 'statistics', trackingSince: number|null, resetAt: number|null, recentBatches: [{ id, at }] }
+         { key: 'statistics:YYYY-MM-DD', date, total, new, viewed, applied, blacklisted, unwantedTitle, ageing }
+           // #19 daily aggregates by the encounter's local date; never exported, imported or synced
 ```
 
 Shared helpers in `src/js/utils.js` (background, content, options): `TYPE_RANK`, `normaliseNameKey(text)`, `noteGroupKey(title, company)`.
@@ -59,11 +62,14 @@ Shared helpers in `src/js/utils.js` (background, content, options): `TYPE_RANK`,
 | `data.export` | – | `{ data: Snapshot }` |
 | `data.import` | `{ data: Snapshot | LegacyV1Export }` | `{ counts: { jobs, companies, notes } }` changed records |
 | `settings.set` | `{ options }` | `{}`; normalised with `normaliseOptions`. `setOptions()` sends this from every context |
+| `stats.record` | `{ batchId, encounteredFrom, days: { 'YYYY-MM-DD': { total, new, viewed, applied, blacklisted?, unwantedTitle?, ageing? } } }` | `{ recorded: true }` or `{ recorded: false, reason: 'duplicate'|'before-reset'|'expired' }`; see Statistics |
+| `stats.get` | – | `{ statistics: { days: Day[], trackingSince, resetAt } }` |
+| `stats.reset` | – | `{ trackingSince }`; deletes only `statistics:*` days |
 | `sync.status` | – | `{ status: { mirror: 'ok'|'full'|'error', error: string|null, at: number|null } }` |
 
-`data.export` and `data.import` are accepted only from extension pages (`sender.url` under `chrome.runtime.getURL('')`); content scripts get `error: 'forbidden'`.
+`data.export`, `data.import`, `stats.get` and `stats.reset` are accepted only from extension pages (`sender.url` under `chrome.runtime.getURL('')`); content scripts get `error: 'forbidden'`.
 
-Incognito senders (`sender.tab.incognito`): `jobs.save`, `jobs.migrateLegacy`, `notes.add|update|delete` are refused with `error: 'incognito'`. Content in incognito keeps jobs in its ephemeral LinkedIn-origin DB as before. Blacklist and settings writes stay allowed (they were already synced).
+Incognito senders (`sender.tab.incognito`): `jobs.save`, `jobs.migrateLegacy`, `notes.add|update|delete`, `stats.record` are refused with `error: 'incognito'`. Content in incognito keeps jobs in its ephemeral LinkedIn-origin DB as before. Blacklist and settings writes stay allowed (they were already synced).
 
 ### Snapshot (`data.export` / `data.import`)
 
@@ -83,6 +89,14 @@ Import:
 
 - `{ action: 'data-changed', jobs?: Job[] /* changed, tombstones included */, companies?: Company[] /* full active blacklist */, revision?, notes?: Note[] }` to every LinkedIn tab (all frames) and to extension pages.
 - `{ action: 'sync-status-changed', status }` to extension pages when the mirror status changes.
+- `{ action: 'statistics-changed' }` to extension pages after a recorded batch or reset. Never sent to LinkedIn tabs and never via `data-changed`, so statistics cannot trigger re-marking.
+
+## Statistics (#19)
+
+- Validation: `batchId` non-empty (≤100 chars); `encounteredFrom` (first encounter in the batch, epoch ms) not more than 60 s in the future; 1–7 days, each a real calendar date between the local date of `encounteredFrom` and today; non-negative integers with `new + viewed + applied === total ≥ 1` and each overlapping category ≤ `total`. Any violation rejects the whole batch with `ok: false`.
+- Idempotency: applied batch IDs are kept for an hour; batches whose `encounteredFrom` is older than 30 minutes are refused (`expired`), so a retry can never outlive its ID. A batch whose `encounteredFrom` precedes the last reset is dropped whole (`before-reset`).
+- Recording and reset run in the serialised mutation queue, in one `meta` transaction, so concurrent tabs cannot lose increments. The database version is unchanged (1).
+- Content side (`src/js/encounters.js`, loaded after content.js): `markCards` passes each card with a job ID to `trackCardEncounter`; `recordCurrentJob` calls `noteOwnViewBeforeSave` before saving an unknown job. Counting rules are described in README › Statistics.
 
 ## Content-side hooks (load order utils → settings → db → blacklist → log → content → feature modules)
 
@@ -90,6 +104,7 @@ Import:
 - `dbMigrateLegacyJobs()` (top frame, every load while the legacy DB exists): sends all legacy records, then deletes only acknowledged records that are unchanged since they were read. The legacy database itself is kept (deleting it can block on old-version tabs' connections); old-version tabs' later writes migrate on the next load.
 - `src/js/blacklist.js`: `blGetList()` (names), `blGetCompanies()`, `blIncludes(name, slug?)`, `blAdd(name, slug?)`, `blRemove(name, slug?)`, `blOnChange(listener)`; snapshots older than the cached `revision` are ignored.
 - Adapters: `getCompanySlug(card)` (card's own company link; shared by all three adapters) and `getDetailPanelCompany()` → `{ name, slug }|null`. `getCardCompanyIdentity(card, adapter)` borrows the panel slug only when the URL `currentJobId`, the rendered panel job ID and the normalised company names all match.
+- `markCards` saves only LinkedIn's own Viewed/Applied labels. `treatPromotedAsViewed` styles promoted/reposted cards as viewed without saving them; records saved by earlier versions under that option remain indistinguishable from real views.
 - Marker state: read the content global `enabled`; react to toggles with `addMessageAction('marker-toggle', ...)` registered after content.js.
 
 ## Sync mirror (#10)

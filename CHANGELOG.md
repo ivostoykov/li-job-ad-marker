@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Statistics page with local daily job-card encounter counts (Today, week, month, all time, since a date), opened from the context menu and Options; statistics are device-only, excluded from backup/restore and sync, and can be reset on their own
+
+### Changed
+- `Treat Promoted and Reposted as Viewed` now styles cards without saving them as viewed history
+
 ## [1.2.0] - 2026-10-20
 
 ### Added

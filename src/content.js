@@ -852,13 +852,16 @@ async function markCards() {
       unwantedWords,
     );
 
+    // Only LinkedIn's own Viewed/Applied labels are saved as history; the
+    // promoted-as-viewed option styles the card without recording a view.
     if (
       jobId &&
-      effectiveLinkedInState &&
-      shouldPromoteState(existing?.type, effectiveLinkedInState)
+      linkedInState &&
+      linkedInState !== "promoted" &&
+      shouldPromoteState(existing?.type, linkedInState)
     ) {
-      saves.push({ linkedInJobId: jobId, type: effectiveLinkedInState });
-      jobMap[jobId] = { linkedInJobId: jobId, type: effectiveLinkedInState };
+      saves.push({ linkedInJobId: jobId, type: linkedInState });
+      jobMap[jobId] = { linkedInJobId: jobId, type: linkedInState };
     }
 
     const companyKey = normaliseNameKey(company);
@@ -873,6 +876,16 @@ async function markCards() {
     const jobState = shouldPromoteState(existing?.type, effectiveLinkedInState)
       ? effectiveLinkedInState
       : (existing?.type ?? effectiveLinkedInState);
+
+    if (jobId && typeof trackCardEncounter === "function") {
+      trackCardEncounter(card, jobId, {
+        existingType: existing?.type ?? null,
+        linkedInState,
+        blacklisted: isBlacklisted,
+        unwantedTitle: !!isUnwantedTitle,
+        ageing: isAgeing,
+      });
+    }
 
     if (!jobId) markStats.noJobId += 1;
     if (!company) markStats.noCompany += 1;
@@ -920,6 +933,7 @@ async function recordCurrentJob() {
 
   const existing = await dbGetJob(jobId);
   if (!existing) {
+    if (typeof noteOwnViewBeforeSave === "function") noteOwnViewBeforeSave(jobId);
     console.debug(
       `${getLogPrefix(console.debug.name)} - ${getLineNumber()} - recording viewed: ${jobId}`,
     );
@@ -1156,6 +1170,7 @@ function watchUrlChanges() {
       lastPath = location.pathname;
       lastSearch = location.search;
       lastHash = location.hash;
+      if (typeof syncEncounterVisit === "function") syncEncounterVisit();
 
       if (pathChanged) {
         currentPageAdapter = selectPageAdapter();
@@ -1312,7 +1327,7 @@ function attachBodyObserver() {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["href", "data-job-id", "data-occludable-job-id"],
+    attributeFilter: ["href", "data-job-id", "data-occludable-job-id", "data-ljm-job-id"],
   });
 
   if (currentPageAdapter) {
