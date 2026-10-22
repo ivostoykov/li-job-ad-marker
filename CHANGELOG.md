@@ -7,25 +7,35 @@
 
 ### Changed
 - `Treat Promoted and Reposted as Viewed` now styles cards without saving them as viewed history
+- The extension is named **Job Ad Marker** in Chrome and Firefox, with a description that distinguishes local features from developer tracking
+
+### Documentation
+- Expanded the privacy policy to cover notes, browser-provider sync, backups, local statistics and retained deletion records
+- Added Firefox site-permission and local development-loading instructions to the README
 
 ## [1.2.0] - 2026-10-20
 
 ### Added
+
 - Independent card notes grouped by title and company, with original job ID and creation time, missing-ID support and confirmation before discarding unsaved changes
 - Company-profile blacklist marking and opportunistic company-slug capture
 - Complete version 2 backups, including notes and deleted records, without requiring a LinkedIn tab
 - Per-company blacklist sync with conflict resolution and a visible warning when sync is unavailable
 
 ### Changed
+
 - Jobs, companies and notes now live in extension-owned IndexedDB behind the background data API
 - Record metadata supports stable IDs, creation/update timestamps and soft deletion
 - Legacy job migration acknowledges committed records before removing unchanged source records; the legacy blacklist remains available during the compatibility transition
 - Imported version 2 records use newer-update-wins merging; older backup files remain supported
+- Saved job history now survives clearing LinkedIn site data; jobs and notes remain local, while settings and the blacklist use browser sync when enabled
 
 ### Fixed
+
 - Invalid imported colours and boolean settings fall back to safe defaults in legacy settings paths
 - Disabling the marker clears unwanted-title styling from the detail panel
 - Unwanted-title tests now cover matched-rule strings, exact matches and badge cleanup
+- Backup imports validate the complete file before changing stored data, with recovery support for interrupted imports
 
 ## [1.1.72] - 2026-04-20
 

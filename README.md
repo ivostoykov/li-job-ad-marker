@@ -1,18 +1,24 @@
-# LinkedIn Job Ad Marker
+# Job Ad Marker
+
+Independent browser extension for LinkedIn. Not affiliated with or endorsed by LinkedIn.
 
 <img src="media/s01.png">
 <img src="media/s02.png">
 
 ---
 
-LinkedIn Job Ad Marker is an extension for Chrome and Firefox that marks LinkedIn job cards and blacklisted company profiles. It helps you work through large job lists faster by marking adverts you have already seen, jobs you have applied for, companies you do not want to deal with, and older listings you may want to skip.
+Job Ad Marker is an extension for Chrome and Firefox that marks LinkedIn job cards and blacklisted company profiles. It helps you work through large job lists faster by marking adverts you have already seen, jobs you have applied for, companies you do not want to deal with, and older listings you may want to skip.
 
 The aim is simple: reduce repeat scanning. Instead of re-reading the same cards every time LinkedIn reshuffles, reloads, or promotes old listings again, the extension adds lightweight visual cues directly to the job list.
 
 - **Chrome**: https://chromewebstore.google.com/detail/linkedin-job-ad-marker/eaegndbkfnnkmcedmhpdiiombakchjbe
-- **FireFox**: Will be here: https://addons.mozilla.org/en-US/firefox/addon/linkedin-job-ad-marker/
+- **Firefox**: Will be here: https://addons.mozilla.org/en-US/firefox/addon/linkedin-job-ad-marker/
 
 ## What It Does
+
+Works with content already loaded on the LinkedIn pages you open. No automated browsing or data sent to developer servers. Settings and company blacklists may sync through your browser account.
+
+Marks and notes are for your own reference. The extension does not submit applications, send messages, save or unsave jobs on LinkedIn, or change your LinkedIn account's application status. **Mark as applied** only updates the extension's saved marker. Company blacklisting is a personal preference, not a report to LinkedIn or a shared rating of an employer.
 
 On supported LinkedIn job pages, the extension scans job cards, extracts job identity where available, and compares that against locally stored data.
 
@@ -104,7 +110,7 @@ Colour and ageing changes are applied live to LinkedIn pages, so a page reload i
 
 ## Export and Import
 
-Export creates a complete JSON backup without requiring a LinkedIn tab. It includes saved settings, jobs, companies and every independent note, including soft-deleted records. Statistics are not included, and importing leaves them unchanged.
+Export creates a JSON backup without requiring a LinkedIn tab. It includes saved settings, jobs, companies and every independent note, including soft-deleted records. Statistics are not included, and importing leaves them unchanged.
 
 The format is `ljm-export`, schema version `2`, with export time and extension version recorded separately. Older export files remain importable. The whole file is validated before writing; invalid files report an error.
 
@@ -147,7 +153,7 @@ This broader match is intentional, because LinkedIn often moves into job pages t
 
 Check the extension's site permission, even if its background page starts without errors:
 
-1. Open `about:addons` and select **LinkedIn Job Ad Marker**.
+1. Open `about:addons` and select **Job Ad Marker**.
 2. Open **Permissions and data**.
 3. Enable **Access your data for https://www.linkedin.com**.
 4. Reload the LinkedIn tab.
