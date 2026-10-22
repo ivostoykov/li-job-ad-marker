@@ -321,6 +321,30 @@ describe('job-card encounter statistics (#19)', () => {
     expect((await readTotals()).total).toBe(1);
   });
 
+  it('applies nothing when a frozen tab resumes a retry after the duplicate window', async () => {
+    const forward = chrome.runtime.sendMessage;
+    const batches = [];
+    vi.spyOn(chrome.runtime, 'sendMessage').mockImplementation(async (message) => {
+      if (message.action !== 'stats.record') return forward(message);
+      batches.push(message);
+      throw new Error('Receiving end does not exist');
+    });
+    const card = makeCard('1');
+    await markCards();
+    setVisible(card);
+    await flushEncounters();
+    vi.restoreAllMocks();
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 2 * 60 * 60 * 1000);
+    vi.spyOn(chrome.runtime, 'sendMessage');
+    await flushEncounters(batches[0], 2);
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    expect((await readTotals()).total).toBe(0);
+  });
+
   it('counts again after a back/forward cache restore', async () => {
     const card = makeCard('1');
     await markCards();

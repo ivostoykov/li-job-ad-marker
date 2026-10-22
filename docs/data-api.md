@@ -94,7 +94,7 @@ Import:
 ## Statistics (#19)
 
 - Validation: `batchId` non-empty (≤100 chars); `encounteredFrom` (first encounter in the batch, epoch ms) not more than 60 s in the future; 1–7 days, each a real calendar date between the local date of `encounteredFrom` and today; non-negative integers with `new + viewed + applied === total ≥ 1` and each overlapping category ≤ `total`. Any violation rejects the whole batch with `ok: false`.
-- Idempotency: applied batch IDs are kept for an hour; batches whose `encounteredFrom` is older than 30 minutes are refused (`expired`), so a retry can never outlive its ID. A batch whose `encounteredFrom` precedes the last reset is dropped whole (`before-reset`).
+- Idempotency: applied batch IDs are kept for an hour; batches whose `encounteredFrom` is older than 30 minutes are refused (`expired`), so a retry can never outlive its ID. The content script also stops retrying a batch 10 minutes after its first encounter (frozen tabs resuming timers). A batch whose `encounteredFrom` precedes the last reset is dropped whole (`before-reset`).
 - Recording and reset run in the serialised mutation queue, in one `meta` transaction, so concurrent tabs cannot lose increments. The database version is unchanged (1).
 - Content side (`src/js/encounters.js`, loaded after content.js): `markCards` passes each card with a job ID to `trackCardEncounter`; `recordCurrentJob` calls `noteOwnViewBeforeSave` before saving an unknown job. Counting rules are described in README › Statistics.
 

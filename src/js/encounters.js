@@ -9,6 +9,8 @@ const ENCOUNTER_VISIBLE_RATIO = 0.5;
 const ENCOUNTER_FLUSH_DELAY_MS = 2000;
 const ENCOUNTER_RETRY_DELAY_MS = 5000;
 const ENCOUNTER_MAX_ATTEMPTS = 3;
+// Well inside the background's 30-minute batch age limit and 1-hour duplicate window.
+const ENCOUNTER_RETRY_EXPIRY_MS = 10 * 60 * 1000;
 const ENCOUNTER_SETTLE_MS = 1500;
 const ENCOUNTER_SETTLE_MAX_MS = 6000;
 const ENCOUNTER_RECHECK_MS = 1000;
@@ -213,6 +215,9 @@ function flushEncounters(batch = null, attempt = 1) {
     if (!encounterPending) return Promise.resolve();
     batch = { action: "stats.record", batchId: crypto.randomUUID(), ...encounterPending };
     encounterPending = null;
+  } else if (Date.now() - batch.encounteredFrom > ENCOUNTER_RETRY_EXPIRY_MS) {
+    // A frozen tab can resume its retry timer hours later.
+    return Promise.resolve();
   }
 
   return Promise.resolve()
