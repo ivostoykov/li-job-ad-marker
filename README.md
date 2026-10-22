@@ -39,6 +39,8 @@ The extension currently records a job as `viewed` when LinkedIn navigates to a s
 
 It also respects LinkedIn’s own `Viewed` badge on cards. If a card already shows LinkedIn’s `Viewed` state and the extension has no local record yet, it stores that as `viewed` as well.
 
+`Treat Promoted and Reposted as Viewed` only styles those cards; it does not save them as viewed. Versions before this change did save them, and those older records cannot be told apart from real views, so they still count as known history.
+
 ## Context Menu Actions
 
 Right-clicking on a LinkedIn jobs page gives you these actions:
@@ -50,11 +52,12 @@ Right-clicking on a LinkedIn jobs page gives you these actions:
 - `Add selection to ignore list` (when text is selected)
 - `Add note`
 - `Show notes`
+- `Statistics`
 - `Options`
 
 `Toggle marker` is a session-level kill switch. It removes all visual marks until you enable the marker again.
 
-`Options` opens the extension options page in a new tab.
+`Statistics` and `Options` open the extension's Statistics and options pages in a new tab.
 
 ## Notes
 
@@ -63,6 +66,17 @@ Right-click a card to add or show notes. Each note is an independent entry; addi
 Notes can be created when the job ID is unavailable. They show “Job ID unavailable” instead of an invented ID. Editing preserves the original job ID and creation time; deleting affects only the selected entry. Unsaved changes require confirmation before being discarded.
 
 Company matching normalises case and whitespace only. When a company-page slug is available, known different slugs remain separate. Name-only cards retain the ambiguity of companies with identical display names. Notes are plain text, remain on this device and have no automatic expiry.
+
+## Statistics
+
+The Statistics page counts job cards shown on LinkedIn results pages (searches, AI search results, company job lists and job collections). It defaults to Today and also offers This week (Monday to Sunday), This month, All time and Since a chosen date.
+
+- `Job cards shown` is split into `New`, `Previously viewed` and `Applied`. Each card counts once, in the state the extension knew when the card first appeared in that visit; opening it afterwards does not turn it into a previous view. `New` means no earlier view or application was known, not newly published.
+- `Blacklisted companies`, `Unwanted titles` and `Ageing` are counted separately. They overlap with the states and with each other, so they are not added to the total.
+- A card counts when at least half of it is visible while marking is on. Cards without a LinkedIn job ID are skipped until one is available.
+- Reloading, another results page, a new search or returning with back/forward counts the cards again. Scrolling back, selecting a job and LinkedIn redrawing the list do not.
+- Counts are daily totals stored by local date on this device. No job IDs or titles are stored for statistics. Private windows are not counted.
+- Statistics are not synced, exported or imported; importing a backup leaves them unchanged. `Reset statistics` deletes only the counts, after confirmation.
 
 ## Options Page
 
@@ -76,7 +90,7 @@ The options page lets you configure a small set of extension settings stored in 
 - applied colour
 - blacklisted colour
 
-It also provides:
+It also provides a `Statistics` link and:
 
 - `Save`
 - `Cancel`
@@ -90,7 +104,7 @@ Colour and ageing changes are applied live to LinkedIn pages, so a page reload i
 
 ## Export and Import
 
-Export creates a complete JSON backup without requiring a LinkedIn tab. It includes saved settings, jobs, companies and every independent note, including soft-deleted records.
+Export creates a complete JSON backup without requiring a LinkedIn tab. It includes saved settings, jobs, companies and every independent note, including soft-deleted records. Statistics are not included, and importing leaves them unchanged.
 
 The format is `ljm-export`, schema version `2`, with export time and extension version recorded separately. Older export files remain importable. The whole file is validated before writing; invalid files report an error.
 
@@ -102,7 +116,7 @@ The extension uses two browser storage layers:
 
 ### IndexedDB
 
-The extension background owns the `ljm-data` database, with stores for jobs, companies, notes and schema metadata. Clearing LinkedIn site data does not clear this extension database.
+The extension background owns the `ljm-data` database, with stores for jobs, companies, notes and schema metadata. Daily statistics totals are kept in the metadata store. Clearing LinkedIn site data does not clear this extension database.
 
 Records have client-generated IDs, creation/update timestamps and optional deletion timestamps. The LinkedIn job ID is a separate indexed field. Deleted records are hidden in normal use and preserved in backups.
 

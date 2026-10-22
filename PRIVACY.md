@@ -46,6 +46,12 @@ The extension requests only the permissions needed for its stated purpose:
 
 The stored data remains in the user's browser until the user removes it by clearing extension data, changing stored values, importing replacement data, or uninstalling the extension.
 
+## Local statistics
+
+The extension counts job cards shown on LinkedIn results pages as daily totals by category (shown, new, previously viewed, applied, blacklisted company, unwanted title, ageing), keyed by local date, together with the date tracking started or was last reset. It does not store job IDs, titles or companies for statistics; a short-lived list of job IDs already counted is kept only in the open page's memory to avoid counting re-rendered cards twice.
+
+Statistics stay in the extension's database on this device. They are not synced, not included in backups and not changed by importing one, and they are not sent to the developer or anyone else. Private windows are not counted. **Reset statistics** on the Statistics page deletes them without affecting jobs, notes or the blacklist; removing extension data or uninstalling also deletes them.
+
 ## Contact
 
 If you publish this extension, replace this section with your preferred contact method, such as an email address or project page.

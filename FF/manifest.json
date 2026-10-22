@@ -37,6 +37,7 @@
         "src/js/blacklist.js",
         "src/js/log.js",
         "src/content.js",
+        "src/js/encounters.js",
         "src/js/notes-ui.js",
         "src/js/profile.js"
       ],

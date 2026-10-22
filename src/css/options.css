@@ -9,7 +9,15 @@ body {
 
 h1 {
   font-size: 18px;
-  margin-bottom: 24px;
+  margin-bottom: 8px;
+}
+
+.page-links {
+  margin: 0 0 24px;
+}
+
+.page-links a {
+  color: #0a66c2;
 }
 
 h2 {

@@ -8,6 +8,16 @@ const EXPORT_FORMAT = 'ljm-export';
 const COMPANY_STATUSES = ['blacklisted'];
 const IMPORT_JOURNAL_KEY = 'importJournal';
 const LEGACY_MIGRATION_KEY = 'jobsLegacyMigration';
+const STATISTICS_META_KEY = 'statistics';
+const STATISTICS_FIELDS = ['total', 'new', 'viewed', 'applied', 'blacklisted', 'unwantedTitle', 'ageing'];
+const STATISTICS_DAY_PREFIX = 'statistics:';
+// Batches older than the maximum age are refused, and recent batch IDs outlive
+// it, so a retry (even from a tab resumed hours later) is never applied twice.
+const STATISTICS_MAX_BATCH_AGE_MS = 30 * 60 * 1000;
+const STATISTICS_BATCH_ID_TTL_MS = 60 * 60 * 1000;
+const STATISTICS_MAX_CLOCK_SKEW_MS = 60 * 1000;
+const STATISTICS_MAX_DAYS_PER_BATCH = 7;
+const STATISTICS_MAX_COUNT = 100000;
 
 let dataDbPromise = null;
 let dataDbReadOnly = false;
@@ -453,6 +463,104 @@ function notesUpdate(id, text, now = Date.now()) {
 
 function notesDelete(id, now = Date.now()) {
   return notesChange(id, { deletedAt: now }, now);
+}
+
+// ---- Statistics (#19) --------------------------------------------------------
+// Daily aggregates only, kept in `meta` as `statistics:YYYY-MM-DD` (the encounter's
+// local date) so the database version, and rollback to older builds, is unchanged.
+// Not exported, imported or synced. Batch IDs make a retried flush idempotent;
+// resetAt drops batches whose first encounter happened before the last reset.
+
+function statisticsDayRange() {
+  return IDBKeyRange.bound(STATISTICS_DAY_PREFIX, `${STATISTICS_DAY_PREFIX}\uffff`);
+}
+
+function isStatisticsDateKey(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+
+// Dates must lie between the batch's first encounter and now, so a batch cannot
+// write before a reset or into the future.
+function validateStatisticsBatch(batchId, days, encounteredFrom, now) {
+  if (!isNonEmptyString(batchId) || batchId.length > 100) throw new Error('Invalid statistics batch ID');
+  if (!isTimestamp(encounteredFrom) || encounteredFrom > now + STATISTICS_MAX_CLOCK_SKEW_MS) {
+    throw new Error('Invalid statistics encounter time');
+  }
+  if (!days || typeof days !== 'object' || Array.isArray(days)) throw new Error('Invalid statistics days');
+  const entries = Object.entries(days);
+  if (!entries.length || entries.length > STATISTICS_MAX_DAYS_PER_BATCH) throw new Error('Invalid statistics day count');
+  const earliest = localDateKey(new Date(encounteredFrom));
+  const latest = localDateKey(new Date(now + STATISTICS_MAX_CLOCK_SKEW_MS));
+
+  return entries.map(([date, counts]) => {
+    if (!isStatisticsDateKey(date) || date < earliest || date > latest) throw new Error(`Invalid statistics date ${date}`);
+    if (!counts || typeof counts !== 'object') throw new Error(`Invalid statistics counts for ${date}`);
+    const clean = Object.fromEntries(STATISTICS_FIELDS.map((field) => [field, counts[field] ?? 0]));
+    const valid = STATISTICS_FIELDS.every((field) =>
+      Number.isInteger(clean[field]) && clean[field] >= 0 && clean[field] <= STATISTICS_MAX_COUNT);
+    // The job-state breakdown is exclusive and complete; marking categories overlap it.
+    if (!valid || clean.total < 1 || clean.new + clean.viewed + clean.applied !== clean.total ||
+      clean.blacklisted > clean.total || clean.unwantedTitle > clean.total || clean.ageing > clean.total) {
+      throw new Error(`Invalid statistics counts for ${date}`);
+    }
+    return [date, clean];
+  });
+}
+
+function statisticsRecord(batchId, days, encounteredFrom, now = Date.now()) {
+  const entries = validateStatisticsBatch(batchId, days, encounteredFrom, now);
+
+  return dataTransaction(['meta'], 'readwrite', async ({ meta }) => {
+    const state = await idbRequest(meta.get(STATISTICS_META_KEY));
+    const recentBatches = (state?.recentBatches ?? []).filter((batch) => batch.at > now - STATISTICS_BATCH_ID_TTL_MS);
+    if (recentBatches.some((batch) => batch.id === batchId)) return { recorded: false, reason: 'duplicate' };
+    if (state?.resetAt && encounteredFrom < state.resetAt) return { recorded: false, reason: 'before-reset' };
+    if (encounteredFrom < now - STATISTICS_MAX_BATCH_AGE_MS) return { recorded: false, reason: 'expired' };
+
+    for (const [date, counts] of entries) {
+      const key = `${STATISTICS_DAY_PREFIX}${date}`;
+      const day = await idbRequest(meta.get(key)) ?? { key, date };
+      for (const field of STATISTICS_FIELDS) day[field] = (day[field] ?? 0) + counts[field];
+      await idbRequest(meta.put(day));
+    }
+    await idbRequest(meta.put({
+      key: STATISTICS_META_KEY,
+      trackingSince: state?.trackingSince ?? Math.min(encounteredFrom, now),
+      resetAt: state?.resetAt ?? null,
+      recentBatches: [...recentBatches, { id: batchId, at: now }],
+    }));
+    return { recorded: true };
+  });
+}
+
+function statisticsGet() {
+  return dataTransaction(['meta'], 'readonly', async ({ meta }) => {
+    const state = await idbRequest(meta.get(STATISTICS_META_KEY));
+    const days = await idbRequest(meta.getAll(statisticsDayRange()));
+    return {
+      days: days.map(({ key, ...day }) => day),
+      trackingSince: state?.trackingSince ?? null,
+      resetAt: state?.resetAt ?? null,
+    };
+  });
+}
+
+// Deletes only the daily aggregates; jobs, companies and notes are untouched.
+function statisticsReset(now = Date.now()) {
+  return dataTransaction(['meta'], 'readwrite', async ({ meta }) => {
+    const state = await idbRequest(meta.get(STATISTICS_META_KEY));
+    await idbRequest(meta.delete(statisticsDayRange()));
+    await idbRequest(meta.put({
+      key: STATISTICS_META_KEY,
+      trackingSince: now,
+      resetAt: now,
+      recentBatches: state?.recentBatches ?? [],
+    }));
+    return { trackingSince: now };
+  });
 }
 
 // ---- Export / import ---------------------------------------------------------

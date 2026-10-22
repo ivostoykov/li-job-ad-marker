@@ -57,6 +57,7 @@ const sourceFiles = [
   'src/js/blacklist.js',
   'src/js/log.js',
   'src/content.js',
+  'src/js/encounters.js',
   'src/js/notes-ui.js',
 ];
 
@@ -91,6 +92,23 @@ const combined =
       dbJobsPending = [];
       blCache = null;
       blCacheRevision = 0;
+      encounterObserver?.disconnect();
+      encounterObserver = null;
+      encounterVisitKey = null;
+      encounterInitialStates = new Map();
+      encounterOwnViews = new Set();
+      encounterCounted = new Set();
+      encounterCardJobIds = new WeakMap();
+      encounterStaleCards = new WeakMap();
+      encounterObservedCards.clear();
+      encounterVisibleCards.clear();
+      clearTimeout(encounterFlushTimer);
+      clearTimeout(encounterSettleTimer);
+      clearTimeout(encounterRecheckTimer);
+      encounterRecheckTimer = null;
+      encounterSettleTimer = null;
+      encounterFlushTimer = null;
+      encounterPending = null;
       globalThis.indexedDB = new globalThis.__IDBFactory();
       globalThis.__createBackground();
     },
