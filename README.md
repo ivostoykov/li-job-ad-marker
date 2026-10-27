@@ -2,7 +2,7 @@
 
 Independent browser extension for LinkedIn. Not affiliated with or endorsed by LinkedIn.
 
-<img src="media/s01.png">
+<img src="media/animation.gif">
 <img src="media/s02.png">
 
 ---

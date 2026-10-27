@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.2.3] - 2026-10-22
 
 ### Added
 - Statistics page with local daily job-card encounter counts (Today, week, month, all time, since a date), opened from the context menu and Options; statistics are device-only, excluded from backup/restore and sync, and can be reset on their own

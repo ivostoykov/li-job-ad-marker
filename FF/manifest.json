@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Ad Marker",
-  "version": "1.2.0",
+  "version": "1.2.3",
   "description": "Marks LinkedIn job ads as viewed, applied or blacklisted. Reads only pages you open. No developer tracking or servers.",
   "permissions": [
     "storage",

@@ -3,12 +3,15 @@
 .aimem-spec/
 .issues/
 .claude/
+.project-map/
+scripts/
 FF/*
 !FF/manifest.json
 
 # Files
 AGENTS.md
 CLAUDE.md
+SOURCEMEM.md
 .mcp.json
 *.zip
 .codex
